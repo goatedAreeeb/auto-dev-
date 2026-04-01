@@ -52,3 +52,7 @@ async def healthz() -> dict[str, str]:
 import gradio as gr
 from app.ui import demo
 app = gr.mount_gradio_app(app, demo, path="/")
+
+def main():
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=7860)
