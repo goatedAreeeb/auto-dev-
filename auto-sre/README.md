@@ -8,7 +8,11 @@ pinned: false
 ---
 # Auto-SRE: OpenEnv for AI SRE Agent Evaluation
 
+[![Open In Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/goated1/auto-sre)
+
 An **OpenEnv-compliant** environment for evaluating AI agents' ability to diagnose and repair simulated Linux infrastructure failures using standard CLI tools.
+
+✨ **[Try the Interactive Glassmorphic Dashboard Demo!](https://huggingface.co/spaces/goated1/auto-sre)**
 
 > **Domain:** Site Reliability Engineering (SRE) — real-world infrastructure repair tasks that DevOps engineers face daily.
 
