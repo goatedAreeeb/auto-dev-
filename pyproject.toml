@@ -21,7 +21,11 @@ dependencies = [
 ]
 
 [project.scripts]
-server = "server.app:main"
+server = "app.main:app"
+
+[tool.setuptools]
+packages = ["app", "engine", "grader", "tasks"]
+package-dir = {"" = "auto-sre"}
 
 [project.optional-dependencies]
 dev = [
