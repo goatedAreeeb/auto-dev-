@@ -1,0 +1,17 @@
+# PRD: Auto-SRE (Junior DevOps) OpenEnv
+
+## 1. Purpose
+Evaluate AI agents' ability to diagnose and repair real-world Linux infrastructure failures using standard CLI tools.
+
+## 2. Target User
+Researchers training "Action-LLMs" or "SRE Agents" to automate L1 support and system recovery.
+
+## 3. Core Features
+* **Terminal Simulation:** A sandboxed bash-like interface for `ls`, `cat`, `grep`, `ps`, and `systemctl`.
+* **Progressive Difficulty:** 3 tasks ranging from simple file renaming to complex dependency resolution.
+* **Deterministic Grading:** Success is measured by the actual health state of the service (HTTP 200) rather than a simple keyword check.
+
+## 4. Functional Requirements
+* **Reset:** Restores the mock filesystem and process list to a "broken" baseline.
+* **Step:** Executes a shell command and returns the `stdout`, `stderr`, and updated system state.
+* **Reward:** Partial credit for diagnostic actions; full credit for service restoration.

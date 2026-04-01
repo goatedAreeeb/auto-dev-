@@ -1,0 +1,19 @@
+# MVP Technical Specification
+
+## 1. Tech Stack
+* **Language:** Python 3.10+
+* **Framework:** FastAPI (OpenEnv Spec)
+* **Schema:** Pydantic v2
+* **Deployment:** Docker + Hugging Face Spaces (Gradio/Uvicorn)
+
+## 2. MVP Task List
+| Task ID | Failure | Fix Action | Grader |
+| :--- | :--- | :--- | :--- |
+| `t1_config` | Misnamed config | `mv conf.bak conf` | `path.exists(conf)` |
+| `t2_port` | Port 8080 occupied | `kill -9 <pid>` | `is_port_free(8080)` |
+| `t3_dep` | Missing `dotenv` | `npm install` | `app.run() == True` |
+
+## 3. Validation Plan
+1.  Run `openenv validate` locally.
+2.  Test with a "Null Agent" (random actions) to ensure no crashes.
+3.  Test with a "Hardcoded Agent" (the solution script) to verify a 1.0 score.

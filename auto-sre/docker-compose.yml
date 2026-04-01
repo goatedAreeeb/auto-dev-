@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  auto-sre:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - ENV=development
+      - LOG_LEVEL=debug
+      - STEP_TIMEOUT=5

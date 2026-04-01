@@ -1,0 +1,19 @@
+# System Design: Auto-SRE
+
+## 1. Observation Space Implementation
+The `Observation` model captures a snapshot of the terminal:
+* `stdout/stderr`: Captures the result of the last command.
+* `cwd`: The current working directory.
+* `health_status`: A boolean indicating if the target service is responding.
+
+## 2. Action Space Implementation
+The agent submits a `DevOpsAction` containing a `tool` (e.g., `run_command`) and `arguments` (the string command).
+
+## 3. Mock Sandbox Strategy
+We utilize a **UnionFS-style** approach:
+* **Base Layer:** Read-only system files (mock `/etc`, `/var`).
+* **Write Layer:** A dictionary-based overlay where the agent's changes (e.g., `write_file`) are stored during the session.
+
+## 4. Security & Safety
+* **Command Whitelisting:** Only safe commands are permitted.
+* **Timeout:** Every step has a 5-second execution limit to prevent infinite loops (e.g., `yes`).

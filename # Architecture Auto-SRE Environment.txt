@@ -1,0 +1,15 @@
+# Architecture: Auto-SRE Environment
+
+## Overview
+The environment uses a **Volatile Mock Filesystem** to prevent agents from damaging the host container.
+
+## Component Map
+1.  **The API Layer (FastAPI):** Exposes `/step`, `/reset`, and `/state` endpoints compliant with OpenEnv.
+2.  **The Sandbox Engine:** A Python-based wrapper that simulates a Bash shell. It intercepts commands (e.g., `rm -rf /`) to ensure safety.
+3.  **The State Manager:** Tracks the "Health" of the simulated services (Nginx, NodeApp, PythonAPI).
+4.  **The Grader Module:** Runs a separate "Health Check" script after every step to verify if the goal state is reached.
+
+
+
+## Data Flow
+`Agent Action` -> `Sandbox Interface` -> `Filesystem/Process Update` -> `Health Check` -> `Observation/Reward`.
