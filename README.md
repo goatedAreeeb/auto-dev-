@@ -84,6 +84,7 @@ Each step returns an `Observation` object:
 | `t1_config` | Config file misnamed `.conf.bak`  | `mv conf.bak conf`  | Easy       | 10        |
 | `t2_port`   | Rogue process occupies port 8080  | `kill -9 <pid>`     | Medium     | 15        |
 | `t3_dep`    | Missing Node.js npm dependencies  | `npm install`       | Hard       | 20        |
+| `t4_trap`   | Healthy System Trap               | `ls /etc/app`       | Hard       | 10        |
 
 ### Reward Function
 - **Full credit (1.0):** The target repair has been successfully completed.
@@ -101,6 +102,7 @@ Scores produced by the deterministic hardcoded agent (reproducible, `OPENAI_API_
 | `t1_config` | 1.0    | 1     |
 | `t2_port`   | 1.0    | 1     |
 | `t3_dep`    | 1.0    | 2     |
+| `t4_trap`   | 1.0    | 1     |
 | **Average** | **1.0**|       |
 
 ---
