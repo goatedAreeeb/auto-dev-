@@ -1,6 +1,6 @@
 ---
 title: Auto-SRE
-  ## 🌐 Live Demo
+## 🌐 Live Demo
 👉 https://huggingface.co/spaces/goated1/auto-sre
 emoji: 🚨
 colorFrom: red
