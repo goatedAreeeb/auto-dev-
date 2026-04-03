@@ -105,7 +105,12 @@ Three tasks spanning easy → hard, each requiring progressively more diagnostic
 
 ### 🟡 T2 — Rogue Process Port Occupation (`t2_port`) · Medium · 15 steps
 
-**Scenario:** A new service cannot bind to port 8080 because a stray background process is occupying it. The port must be freed before the application can start.
+| Task ID     | Failure                           | Solution            | Difficulty | Max Steps |
+|:------------|:----------------------------------|:--------------------|:-----------|:----------|
+| `t1_config` | Config file misnamed `.conf.bak`  | `mv conf.bak conf`  | Easy       | 10        |
+| `t2_port`   | Rogue process occupies port 8080  | `kill -9 <pid>`     | Medium     | 15        |
+| `t3_dep`    | Missing Node.js npm dependencies  | `npm install`       | Hard       | 20        |
+| `t4_trap`   | Healthy System Trap               | `ls /etc/app`       | Hard       | 10        |
 
 **What the agent must do:**
 1. List running processes (`ps aux`) or check ports
@@ -125,7 +130,13 @@ Three tasks spanning easy → hard, each requiring progressively more diagnostic
 2. Confirm the absence of `node_modules` (`ls /home/user/app/`)
 3. Install dependencies: `npm install` (run from correct directory)
 
-**Grader (`DependencyGrader`):** Checks for `/home/user/app/node_modules/.package-lock.json` in the overlay filesystem. Requires the agent to navigate to the correct directory before installing — wrong directory means the grader still returns 0.
+| Task        | Reward | Steps |
+|:------------|:-------|:------|
+| `t1_config` | 1.0    | 1     |
+| `t2_port`   | 1.0    | 1     |
+| `t3_dep`    | 1.0    | 2     |
+| `t4_trap`   | 1.0    | 1     |
+| **Average** | **1.0**|       |
 
 ---
 
