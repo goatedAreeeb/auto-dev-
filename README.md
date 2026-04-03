@@ -1,7 +1,5 @@
 ---
 title: Auto-SRE
-## 🌐 Live Demo
-👉 https://huggingface.co/spaces/goated1/auto-sre
 emoji: 🚨
 colorFrom: red
 colorTo: orange
@@ -17,6 +15,8 @@ tags:
 
 # 🚨 Auto-SRE — AI Infrastructure Repair Environment
     AI agents that can debug and fix real production systems — not toy problems.
+    ## 🌐 Live Demo
+👉 https://huggingface.co/spaces/goated1/auto-sre
 
 > *"The server is down. You have 10 steps. Go."*
 
