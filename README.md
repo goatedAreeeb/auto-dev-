@@ -1,5 +1,7 @@
 ---
 title: Auto-SRE
+  ## 🌐 Live Demo
+👉 https://huggingface.co/spaces/goated1/auto-sre
 emoji: 🚨
 colorFrom: red
 colorTo: orange
@@ -14,6 +16,7 @@ tags:
 ---
 
 # 🚨 Auto-SRE — AI Infrastructure Repair Environment
+    AI agents that can debug and fix real production systems — not toy problems.
 
 > *"The server is down. You have 10 steps. Go."*
 
@@ -34,7 +37,7 @@ Production infrastructure breaks in predictable ways. Every day, engineers spend
 **Today:** A human engineer SSHs in, runs `ps aux`, reads logs, and fixes it manually.  
 **Tomorrow:** An AI agent does the same — faster, at 3 AM, without waking anyone up.
 
-Auto-SRE is the training and evaluation ground for that agent. It is the **first DevOps/SRE-domain environment on the OpenEnv Hub**, filling a gap that currently has no equivalent.
+Auto-SRE is the training and evaluation ground for that agent. It is the **It is one of the first OpenEnv environments focused on real-world DevOps/SRE infrastructure repair.**, filling a gap that currently has no equivalent.
 
 ---
 
