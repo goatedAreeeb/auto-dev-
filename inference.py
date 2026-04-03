@@ -13,29 +13,29 @@ from openai import OpenAI
 from typing import List, Optional
 
 # --- Mandatory Environment Variables ---
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME")
-AUTO_SRE_URL = os.getenv("AUTO_SRE_URL", "http://localhost:7860")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+HF_TOKEN = os.getenv("HF_TOKEN")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o")
+AUTO_SRE_URL = os.getenv("AUTO_SRE_URL", "http://localhost:8000")
 
 BENCHMARK = "auto-sre"
 MAX_STEPS = 10
 
 # --- Helper Functions for Mandatory STDOUT Format ---
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+    print(f"START: task={task} env={env} model={model}", flush=True)
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"STEP: step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
+    print(f"END: success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 # --- Agent System Prompt & Hints ---
 SYSTEM_PROMPT = """You are an expert Site Reliability Engineer (SRE).
@@ -46,17 +46,19 @@ TASK_HINTS = {
     "t1_config": "A config file is misnamed. Find and rename it to /etc/app/conf.",
     "t2_port": "Port 8080 is blocked by a rogue process. Kill it.",
     "t3_dep": "The Node.js app is missing dependencies. Run npm install.",
+    "t4_trap": "A system report suggests a failure... Verify before taking action.",
 }
 
 HARDCODED_SOLUTIONS = {
     "t1_config": ["mv /etc/app/conf.bak /etc/app/conf"],
     "t2_port": ["kill -9 512"],
     "t3_dep": ["cd /home/user/app", "npm install"],
+    "t4_trap": ["ls /etc/app"],
 }
 
 def run_episode(task_id: str, task_desc: str):
     # Determine if we should use LLM or Hardcoded
-    use_llm = bool(API_KEY and MODEL_NAME)
+    use_llm = bool(HF_TOKEN and MODEL_NAME)
     model_display = MODEL_NAME if use_llm else "hardcoded"
     
     log_start(task=task_id, env=BENCHMARK, model=model_display)
@@ -77,7 +79,7 @@ def run_episode(task_id: str, task_desc: str):
             return
 
         if use_llm:
-            client_ai = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+            client_ai = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Task: {task_desc}\nHint: {TASK_HINTS.get(task_id, '')}\nBegin."},
