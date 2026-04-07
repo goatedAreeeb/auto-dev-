@@ -57,7 +57,7 @@ async def step_action(body: dict = Body(...)) -> Any:
                 "cwd": session.sandbox.cwd,
                 "health_status": done
             },
-            "reward": Reward(reward),
+            "reward": reward,
             "done": session.is_done,
             "info": {
                 "steps_taken": session.step_count,
@@ -73,7 +73,7 @@ async def step_action(body: dict = Body(...)) -> Any:
                 "cwd": "/",
                 "health_status": False
             },
-            "reward": Reward(reward),
+            "reward": reward,
             "done": True,
             "info": {
                 "steps_taken": 0,
