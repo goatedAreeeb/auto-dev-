@@ -37,7 +37,7 @@ class ConfigGrader(BaseGrader):
     ) -> tuple[float, bool, str]:
         # 1. Success check
         if filesystem.exists("/etc/app/conf"):
-            return _safe_score(1.0), True, "Config fixed successfully"
+            return _safe_score(0.99), True, "Config fixed successfully"
 
         # 2. Partial reward calculation
         score = 0.05
@@ -64,7 +64,7 @@ class PortGrader(BaseGrader):
     ) -> tuple[float, bool, str]:
         # 1. Success check
         if process_manager.is_port_free(8080):
-            return _safe_score(1.0), True, "Port freed successfully"
+            return _safe_score(0.99), True, "Port freed successfully"
 
         # 2. Partial reward calculation
         score = 0.05
@@ -92,7 +92,7 @@ class DependencyGrader(BaseGrader):
         # 1. Success check
         has_modules = filesystem.exists("/home/user/app/node_modules/.package-lock.json")
         if has_modules:
-            return _safe_score(1.0), True, "Dependencies installed"
+            return _safe_score(0.99), True, "Dependencies installed"
 
         # 2. Partial reward calculation
         score = 0.05
@@ -127,7 +127,7 @@ class TrapGrader(BaseGrader):
             and any(cmd.startswith(("ls", "cat", "ps", "netstat", "lsof")) for cmd in command_history)
             and all(not cmd.startswith(("mv", "kill", "rm", "npm install")) for cmd in command_history)
         ):
-            return _safe_score(1.0), True, "Correctly identified system is healthy and avoided unnecessary actions"
+            return _safe_score(0.99), True, "Correctly identified system is healthy and avoided unnecessary actions"
 
         # 3. Partial reward logic: reward diagnostic exploration
         score = 0.05

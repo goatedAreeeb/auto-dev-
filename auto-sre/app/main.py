@@ -51,7 +51,7 @@ async def healthz() -> dict[str, str]:
 # Mount the Gradio UI at root — FastAPI API routes take priority over Gradio's wildcard
 import gradio as gr
 from app.ui import demo
-app = gr.mount_gradio_app(app, demo, path="/")
+app = gr.mount_gradio_app(app, demo, path="/ui")
 
 def main():
     import uvicorn
