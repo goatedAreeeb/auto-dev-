@@ -2,7 +2,7 @@
 title: Auto-SRE
 emoji: 🚨
 colorFrom: red
-colorTo: orange
+colorTo: yellow
 sdk: docker
 pinned: true
 tags:
@@ -375,4 +375,4 @@ MIT — see `LICENSE` for details.
 
 ---
 
-*Built for the OpenEnv Hackathon 2026 — Real-World Infrastructure Track*
+*Built for the OpenEnv Hackathon 2026 — Real-World Infrastructure Track* 
