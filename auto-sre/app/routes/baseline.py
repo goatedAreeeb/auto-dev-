@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import math
 import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
 router = APIRouter()
+
+_SCORE_MIN = 1e-6
+_SCORE_MAX = 1 - 1e-6
 
 SOLUTIONS: dict[str, list[str]] = {
     "t1_config": ["mv /etc/app/conf.bak /etc/app/conf"],
@@ -22,6 +26,15 @@ TASK_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+def _safe_reward(raw) -> float:
+    if raw is None or (isinstance(raw, float) and math.isnan(raw)):
+        return _SCORE_MIN
+    r = float(raw)
+    r = max(_SCORE_MIN, min(_SCORE_MAX, r))
+    assert 0 < r < 1, f"Score out of range: {r}"
+    return r
+
+
 def _run_task_internally(task_id: str, commands: list[str]) -> dict:
     """Run a task using the internal session engine (no HTTP self-call)."""
     from tasks.registry import get_task
@@ -31,12 +44,12 @@ def _run_task_internally(task_id: str, commands: list[str]) -> dict:
     try:
         task_def = get_task(task_id)
     except KeyError as e:
-        return {"task_id": task_id, "reward": 0.01, "done": False, "error": str(e)}
+        return {"task_id": task_id, "reward": _SCORE_MIN, "done": False, "error": str(e)}
 
     fs, pm = task_def.build_initial_state()
     sandbox = Sandbox(fs, pm)
     step_count = 0
-    last_reward = 0.01
+    last_reward = _SCORE_MIN
     done = False
 
     for cmd in commands:
@@ -51,8 +64,8 @@ def _run_task_internally(task_id: str, commands: list[str]) -> dict:
             sandbox.fs, sandbox.pm, sandbox.command_history
         )
 
-        # 🔒 HARD CLAMP AFTER EVERY STEP
-        last_reward = max(0.01, min(0.99, float(last_reward)))
+        # HARD CLAMP AFTER EVERY STEP — strictly (0, 1)
+        last_reward = _safe_reward(last_reward)
 
         if done:
             break
@@ -78,29 +91,27 @@ async def run_baseline() -> dict:
         result = _run_task_internally(task_id, commands)
         results.append(result)
 
-    # 🔒 HARDEN ALL RESULTS (CRITICAL SAFETY LAYER)
+    # HARDEN ALL RESULTS — strictly (0, 1)
     for r in results:
-        r["reward"] = max(0.01, min(0.99, float(r.get("reward", 0.01))))
+        r["reward"] = _safe_reward(r.get("reward"))
 
     elapsed = round(float(time.monotonic() - start_ts), 4)
 
-    # 🔒 SAFE AGGREGATION
+    # SAFE AGGREGATION
     total_reward = sum(r["reward"] for r in results)
-    total_reward = max(0.01, min(0.99, float(total_reward)))
-
-    avg_reward = total_reward / len(results) if results else 0.01
-    avg_reward = max(0.01, min(0.99, avg_reward))
+    avg_reward = total_reward / len(results) if results else _SCORE_MIN
+    avg_reward = _safe_reward(avg_reward)
 
     return {
         "baseline_agent": "hardcoded_deterministic",
-        "description": "Reproducible baseline using known-correct solutions. Run scripts/run_baseline_agent.py with OPENAI_API_KEY for LLM evaluation.",
+        "description": "Reproducible baseline using known-correct solutions.",
         "tasks": results,
         "aggregate": {
             "total_reward": round(total_reward, 4),
             "average_reward": round(avg_reward, 4),
-            "tasks_solved": sum(1 for r in results if r["reward"] >= 0.99),
+            "tasks_solved": sum(1 for r in results if r["reward"] >= _SCORE_MAX),
             "total_tasks": len(results),
-            "all_passed": all(r["reward"] >= 0.99 for r in results),
+            "all_passed": all(r["reward"] >= _SCORE_MAX for r in results),
             "evaluation_time_seconds": elapsed,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },

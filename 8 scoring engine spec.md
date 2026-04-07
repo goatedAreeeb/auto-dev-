@@ -8,7 +8,7 @@ The scoring engine uses **deterministic, state-based grading** — it evaluates 
 ## 2. Reward Structure
 
 ### 2.1 Reward Range
-All rewards are normalized to `[0.0, 1.0]`.
+All rewards are normalized to `open interval (0, 1)`.
 
 ### 2.2 Reward Breakdown
 | Component            | Weight | Description                                                |

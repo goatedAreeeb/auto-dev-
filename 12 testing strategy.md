@@ -36,11 +36,11 @@
 ### 2.3 Grader (`tests/test_grader.py`)
 | Test Case                        | Assertion                                      |
 | :------------------------------- | :--------------------------------------------- |
-| `t1` config file exists          | Returns `reward = 1.0`                         |
-| `t1` config file missing         | Returns `reward = 0.0`                         |
-| `t2` port 8080 freed             | Returns `reward = 1.0`                         |
-| `t2` port 8080 still occupied    | Returns `reward = 0.0`                         |
-| `t3` app runs successfully       | Returns `reward = 1.0`                         |
+| `t1` config file exists          | Returns `reward = 1-1e-6`                         |
+| `t1` config file missing         | Returns `reward = 1e-6`                         |
+| `t2` port 8080 freed             | Returns `reward = 1-1e-6`                         |
+| `t2` port 8080 still occupied    | Returns `reward = 1e-6`                         |
+| `t3` app runs successfully       | Returns `reward = 1-1e-6`                         |
 | `t3` deps installed but app fails| Returns `reward = 0.5`                         |
 
 ---
@@ -60,9 +60,9 @@
 ### 3.2 Full Episode Flow (`tests/test_tasks.py`)
 | Test Case                            | Assertion                                    |
 | :----------------------------------- | :------------------------------------------- |
-| Reset → solve t1 → check reward      | Final `reward == 1.0`, `done == true`        |
-| Reset → solve t2 → check reward      | Final `reward == 1.0`, `done == true`        |
-| Reset → solve t3 → check reward      | Final `reward == 1.0`, `done == true`        |
+| Reset → solve t1 → check reward      | Final `reward >= 1-1e-6`, `done == true`        |
+| Reset → solve t2 → check reward      | Final `reward >= 1-1e-6`, `done == true`        |
+| Reset → solve t3 → check reward      | Final `reward >= 1-1e-6`, `done == true`        |
 | Reset → exceed max steps             | Episode ends, `done == true`, partial reward |
 
 ---
@@ -76,7 +76,7 @@
 
 ### 4.2 Hardcoded Agent (`scripts/run_hardcoded_agent.py`)
 * Sends the known correct solution for each task.
-* **Pass criteria:** `reward == 1.0` and `done == true` for all 3 tasks.
+* **Pass criteria:** `reward >= 1-1e-6` and `done == true` for all 3 tasks.
 
 ---
 

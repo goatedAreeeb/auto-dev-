@@ -120,7 +120,7 @@ Four tasks spanning easy → hard. The first three test repair ability. The four
 2. Identify which PID owns port 8080
 3. Terminate it: `kill -9 <pid>`
 
-**Grader (`PortGrader`):** Calls `process_manager.is_port_free(8080)`. Returns 1.0 only when the port is genuinely freed in the mock process table. Killing the wrong PID scores 0 — the agent must read the process list correctly.
+**Grader (`PortGrader`):** Calls `process_manager.is_port_free(8080)`. Returns 1 - 1e-6 only when the port is genuinely freed in the mock process table. Killing the wrong PID scores 1e-6 — the agent must read the process list correctly.
 
 ---
 
@@ -146,11 +146,11 @@ Four tasks spanning easy → hard. The first three test repair ability. The four
 2. Confirm the system is healthy
 3. Stand down — report the false alarm **without making any changes**
 
-**What scores 0:** Any repair action (`mv`, `kill`, `npm install`) applied to a healthy system is a false positive. The grader penalizes destructive actions regardless of intent.
+**What scores 1e-6:** Any repair action (`mv`, `kill`, `npm install`) applied to a healthy system is a false positive. The grader penalizes destructive actions regardless of intent.
 
 **Why this task exists:** Real SRE work requires knowing when *not* to act. Agents that pattern-match "alert → fix" without diagnosing will destroy a working system. T4 specifically tests restraint under pressure — the hardest skill to teach and the most important one in production.
 
-**Grader (`TrapGrader`):** Returns 1.0 if no destructive commands were issued and at least one diagnostic command confirmed the system was healthy. Returns 0.0 if any repair tool was applied to the healthy system.
+**Grader (`TrapGrader`):** Returns 1 - 1e-6 if no destructive commands were issued and at least one diagnostic command confirmed the system was healthy. Returns 1e-6 if any repair tool was applied to the healthy system.
 
 ---
 
@@ -239,7 +239,7 @@ curl -X POST https://goated1-auto-sre.hf.space/step \
 curl -X POST https://goated1-auto-sre.hf.space/step \
   -H "Content-Type: application/json" \
   -d '{"tool": "run_command", "arguments": "mv /etc/app/conf.bak /etc/app/conf"}'
-# → {"stdout": "", "stderr": "", "health_status": true, "reward": 1.0, "done": true}
+# → {"stdout": "", "stderr": "", "health_status": true, "reward": 0.999999, "done": true}
 ```
 
 ### Example: T4 Trap Episode (Correct Behaviour)
@@ -260,7 +260,7 @@ curl -X POST https://goated1-auto-sre.hf.space/step \
 curl -X POST https://goated1-auto-sre.hf.space/step \
   -H "Content-Type: application/json" \
   -d '{"tool": "run_command", "arguments": "echo System healthy — false alarm, no action taken"}'
-# → {"reward": 1.0, "done": true}
+# → {"reward": 0.999999, "done": true}
 ```
 
 ---

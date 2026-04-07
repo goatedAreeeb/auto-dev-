@@ -2,17 +2,32 @@
 
 from __future__ import annotations
 
+import math
+
 from fastapi import APIRouter, HTTPException, Body
 from typing import Any
 
 from app.schemas.action import DevOpsAction
-from app.schemas.observation import StepResponse, Observation, Reward
+from app.schemas.observation import StepResponse, Observation
 from app.routes._session import get_session
 
 router = APIRouter()
 
+_SCORE_MIN = 1e-6
+_SCORE_MAX = 1 - 1e-6
 
-@router.post("/step", response_model=StepResponse)
+
+def _safe_reward(raw) -> float:
+    """Clamp reward to open interval (0, 1). Handles None/NaN."""
+    if raw is None or (isinstance(raw, float) and math.isnan(raw)):
+        return _SCORE_MIN
+    r = float(raw)
+    r = max(_SCORE_MIN, min(_SCORE_MAX, r))
+    assert 0 < r < 1, f"Score out of range: {r}"
+    return r
+
+
+@router.post("/step")
 async def step_action(body: dict = Body(...)) -> Any:
     """Execute a shell command and return the resulting observation and reward."""
     try:
@@ -40,14 +55,11 @@ async def step_action(body: dict = Body(...)) -> Any:
         session.step_count += 1
         session.record_step(str(cmd), result.stdout, result.stderr)
         
-        reward, done, grader_msg = session.task_def.grader.grade(
+        raw_reward, done, grader_msg = session.task_def.grader.grade(
             session.sandbox.fs, session.sandbox.pm, session.sandbox.command_history
         )
-        # HARD CLAMP — no 0.0 or 1.0 can ever escape
-        reward = float(reward)
-        reward = max(0.01, min(0.99, reward))
-        assert 0.0 < reward < 1.0, f"INVALID REWARD LEAK: {reward}"
-        print("FINAL REWARD BEFORE RETURN:", reward, flush=True)
+        # HARD CLAMP — strictly in (0, 1), never 0.0 or 1.0
+        reward = _safe_reward(raw_reward)
         session.is_done = done or (session.step_count >= session.task_def.max_steps)
 
         return {
@@ -65,7 +77,6 @@ async def step_action(body: dict = Body(...)) -> Any:
             }
         }
     except Exception as e:
-        reward = 0.01
         return {
             "observation": {
                 "stdout": "",
@@ -73,7 +84,7 @@ async def step_action(body: dict = Body(...)) -> Any:
                 "cwd": "/",
                 "health_status": False
             },
-            "reward": reward,
+            "reward": _SCORE_MIN,
             "done": True,
             "info": {
                 "steps_taken": 0,
