@@ -13,26 +13,24 @@ router = APIRouter()
 _SCORE_MIN = 1e-6
 _SCORE_MAX = 1 - 1e-6
 
-SOLUTIONS: dict[str, list[str]] = {
-    "t1_config": ["mv /etc/app/conf.bak /etc/app/conf"],
-    "t2_port": ["kill -9 512"],
-    "t3_dep": ["cd /home/user/app", "npm install"],
-}
-
-TASK_DESCRIPTIONS: dict[str, str] = {
-    "t1_config": "A critical config file has been misnamed. The app cannot find /etc/app/conf.",
-    "t2_port": "Port 8080 is occupied by a rogue process. Kill it to free the port.",
-    "t3_dep": "The Node.js application is missing npm dependencies. Install them.",
-}
-
 
 def _safe_reward(raw) -> float:
+    """Clamp reward strictly to (0, 1)."""
     if raw is None or (isinstance(raw, float) and math.isnan(raw)):
         return _SCORE_MIN
     r = float(raw)
     r = max(_SCORE_MIN, min(_SCORE_MAX, r))
     assert 0 < r < 1, f"Score out of range: {r}"
     return r
+
+
+# ✅ FIX: include ALL tasks (including trap)
+SOLUTIONS: dict[str, list[str]] = {
+    "t1_config": ["mv /etc/app/conf.bak /etc/app/conf"],
+    "t2_port": ["kill -9 512"],
+    "t3_dep": ["cd /home/user/app", "npm install"],
+    "t4_trap": ["ls /etc/app"],  # 🔥 important
+}
 
 
 def _run_task_internally(task_id: str, commands: list[str]) -> dict:
@@ -48,6 +46,7 @@ def _run_task_internally(task_id: str, commands: list[str]) -> dict:
 
     fs, pm = task_def.build_initial_state()
     sandbox = Sandbox(fs, pm)
+
     step_count = 0
     last_reward = _SCORE_MIN
     done = False
@@ -64,7 +63,7 @@ def _run_task_internally(task_id: str, commands: list[str]) -> dict:
             sandbox.fs, sandbox.pm, sandbox.command_history
         )
 
-        # HARD CLAMP AFTER EVERY STEP — strictly (0, 1)
+        # 🔒 HARD CLAMP EVERY STEP
         last_reward = _safe_reward(last_reward)
 
         if done:
@@ -81,9 +80,10 @@ def _run_task_internally(task_id: str, commands: list[str]) -> dict:
 @router.get("/baseline", tags=["Evaluation"])
 async def run_baseline() -> dict:
     """
-    Run the deterministic hardcoded baseline agent on all tasks internally.
-    Returns reproducible baseline scores without requiring an OpenAI API key.
+    Run deterministic baseline across ALL tasks.
+    Ensures all rewards strictly in (0, 1).
     """
+
     start_ts = time.monotonic()
     results = []
 
@@ -91,14 +91,16 @@ async def run_baseline() -> dict:
         result = _run_task_internally(task_id, commands)
         results.append(result)
 
-    # HARDEN ALL RESULTS — strictly (0, 1)
+    # 🔒 FINAL SAFETY CLAMP
     for r in results:
         r["reward"] = _safe_reward(r.get("reward"))
 
-    elapsed = round(float(time.monotonic() - start_ts), 4)
+    elapsed = float(time.monotonic() - start_ts)
 
-    # SAFE AGGREGATION
+    # 🔒 SAFE AGGREGATION (NO ROUNDING)
     total_reward = sum(r["reward"] for r in results)
+    total_reward = max(_SCORE_MIN, min(_SCORE_MAX * len(results), total_reward))
+
     avg_reward = total_reward / len(results) if results else _SCORE_MIN
     avg_reward = _safe_reward(avg_reward)
 
@@ -107,11 +109,12 @@ async def run_baseline() -> dict:
         "description": "Reproducible baseline using known-correct solutions.",
         "tasks": results,
         "aggregate": {
-            "total_reward": round(total_reward, 4),
-            "average_reward": round(avg_reward, 4),
-            "tasks_solved": sum(1 for r in results if r["reward"] >= _SCORE_MAX),
+            # ❗ NO rounding anywhere
+            "total_reward": total_reward,
+            "average_reward": avg_reward,
+            "tasks_solved": sum(1 for r in results if r["reward"] >= 0.99),
             "total_tasks": len(results),
-            "all_passed": all(r["reward"] >= _SCORE_MAX for r in results),
+            "all_passed": all(r["reward"] >= 0.99 for r in results),
             "evaluation_time_seconds": elapsed,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },

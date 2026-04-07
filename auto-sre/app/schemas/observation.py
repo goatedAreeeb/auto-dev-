@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, RootModel
-
-
-class Reward(RootModel[float]):
-    """Reward value strictly between 0 and 1 (exclusive)."""
-    root: float = Field(default=1e-6, gt=0.0, lt=1.0, description="Reward — strictly in (0, 1)")
+from pydantic import BaseModel, Field
 
 
 class Observation(BaseModel):
@@ -27,7 +22,15 @@ class StepResponse(BaseModel):
     """Full response returned by the /step endpoint."""
 
     observation: Observation
-    reward: Reward = Field(default=Reward(1e-6), description="Reward — strictly in (0, 1), exclusive. Values 0.0 and 1.0 are not allowed.")
+
+    # 🔒 CRITICAL FIX: Use plain float (NO RootModel)
+    reward: float = Field(
+        default=1e-6,
+        gt=0.0,
+        lt=1.0,
+        description="Reward — strictly in (0, 1), exclusive. Values 0.0 and 1.0 are not allowed."
+    )
+
     done: bool = Field(default=False, description="Whether the episode has ended")
     info: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
