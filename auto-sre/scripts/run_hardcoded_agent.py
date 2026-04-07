@@ -42,8 +42,8 @@ def run_hardcoded_agent() -> None:
             print(f"  > {cmd}")
             print(f"    reward={last_response['reward']}, done={last_response['done']}")
 
-        if last_response and last_response["reward"] >= 0.99 and last_response["done"]:
-            print(f"  [PASS] {task_id}: PASSED (reward>=0.99)")
+        if last_response and last_response["reward"] >= 1 - 1e-6 and last_response["done"]:
+            print(f"  [PASS] {task_id}: PASSED (reward>=1-1e-6)")
         else:
             print(f"  [FAIL] {task_id}: FAILED (reward={last_response['reward'] if last_response else 'N/A'})")
             all_passed = False

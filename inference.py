@@ -12,6 +12,19 @@ import httpx
 from openai import OpenAI
 from typing import List, Optional
 
+# --- Safe score clamp: strictly in open interval (0, 1) ---
+_SCORE_MIN = 1e-6
+_SCORE_MAX = 1 - 1e-6
+
+
+def _safe_score(raw) -> float:
+    try:
+        f = float(raw)
+        return max(_SCORE_MIN, min(_SCORE_MAX, f))
+    except (ValueError, TypeError):
+        return _SCORE_MIN
+
+
 # --- Mandatory Environment Variables ---
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.environ.get("API_KEY")
@@ -45,12 +58,12 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     error_val = error if error else "null"
     done_val = str(done).lower()
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={action} reward={reward:.6f} done={done_val} error={error_val}",
         flush=True,
     )
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{r:.6f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 # --- Agent System Prompt & Hints ---
@@ -103,10 +116,10 @@ def run_episode(task_id: str, task_desc: str):
         try:
             resp = http_client.post(f"{AUTO_SRE_URL}/reset", json={"task_id": task_id})
             if resp.status_code != 200:
-                log_end(success=False, steps=0, rewards=[0.01])
+                log_end(success=False, steps=0, rewards=[_SCORE_MIN])
                 return
         except Exception:
-            log_end(success=False, steps=0, rewards=[0.01])
+            log_end(success=False, steps=0, rewards=[_SCORE_MIN])
             return
 
         if use_llm:
@@ -130,11 +143,11 @@ def run_episode(task_id: str, task_desc: str):
                     
                     step_resp = http_client.post(f"{AUTO_SRE_URL}/step", json={"tool": "run_command", "arguments": action_str})
                     if step_resp.status_code != 200:
-                        log_step(step=s, action=action_str, reward=0.01, done=True, error=step_resp.text)
+                        log_step(step=s, action=action_str, reward=_SCORE_MIN, done=True, error=step_resp.text)
                         break
                     
                     data = step_resp.json()
-                    reward = max(0.01, min(0.99, float(data.get("reward", 0.01))))
+                    reward = _safe_score(data.get("reward", _SCORE_MIN))
                     done = data.get("done", False)
                     obs = data.get("observation", {}).get("stdout", "") or data.get("observation", {}).get("stderr", "")
                     
@@ -142,13 +155,13 @@ def run_episode(task_id: str, task_desc: str):
                     log_step(step=s, action=action_str, reward=reward, done=done, error=None)
                     
                     if done:
-                        success = (reward >= 0.99)
+                        success = (reward >= _SCORE_MAX)
                         break
                     
                     messages.append({"role": "assistant", "content": action_str})
                     messages.append({"role": "user", "content": f"Output:\n{obs}"})
                 except Exception as e:
-                    log_step(step=s, action="error", reward=0.01, done=True, error=str(e))
+                    log_step(step=s, action="error", reward=_SCORE_MIN, done=True, error=str(e))
                     break
         else:
             # Fallback to deterministic baseline
@@ -157,12 +170,12 @@ def run_episode(task_id: str, task_desc: str):
                 try:
                     step_resp = http_client.post(f"{AUTO_SRE_URL}/step", json={"tool": "run_command", "arguments": action_str})
                     data = step_resp.json()
-                    reward = max(0.01, min(0.99, float(data.get("reward", 0.01))))
+                    reward = _safe_score(data.get("reward", _SCORE_MIN))
                     done = data.get("done", False)
                     rewards.append(reward)
                     log_step(step=s, action=action_str, reward=reward, done=done, error=None)
                     if done:
-                        success = (reward >= 0.99)
+                        success = (reward >= _SCORE_MAX)
                         break
                 except Exception:
                     break

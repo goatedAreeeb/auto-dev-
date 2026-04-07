@@ -58,7 +58,7 @@ Executes a single agent action (shell command) inside the sandbox.
     "cwd": "/home/user",
     "health_status": true
   },
-  "reward": 1.0,
+  "reward": 0.999999,
   "done": true,
   "info": {
     "steps_taken": 1,
@@ -119,6 +119,6 @@ Returns the current metadata of the environment without performing any action.
 | Field         | Type          | Description                               |
 | :------------ | :------------ | :---------------------------------------- |
 | `observation` | `Observation` | The resulting observation                  |
-| `reward`      | `float`       | Reward value (0.0 to 1.0)                 |
+| `reward`      | `float`       | Reward value (open interval (0, 1))                 |
 | `done`        | `bool`        | Whether the episode has ended              |
 | `info`        | `dict`        | Additional metadata (steps, grader message)|

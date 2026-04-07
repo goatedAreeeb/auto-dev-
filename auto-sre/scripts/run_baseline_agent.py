@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import httpx  # type: ignore[import-untyped]
 
 
@@ -13,6 +12,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_STEPS = 10
+
+_SCORE_MIN = 1e-6
+_SCORE_MAX = 1 - 1e-6
 
 
 SYSTEM_PROMPT = """You are an expert Site Reliability Engineer (SRE) diagnosing and repairing Linux infrastructure failures.
@@ -40,6 +42,14 @@ HARDCODED_SOLUTIONS = {
 }
 
 
+def _safe_score(val) -> float:
+    try:
+        f = float(val)
+        return max(_SCORE_MIN, min(_SCORE_MAX, f))
+    except (ValueError, TypeError):
+        return _SCORE_MIN
+
+
 def run_llm_episode(client: httpx.Client, task_id: str, task_desc: str) -> dict:
     from openai import OpenAI
 
@@ -54,7 +64,7 @@ def run_llm_episode(client: httpx.Client, task_id: str, task_desc: str) -> dict:
 
     resp = client.post(f"{BASE_URL}/reset", json={"task_id": task_id})
     if resp.status_code != 200:
-        return {"task_id": task_id, "reward": 0.01, "done": False}
+        return {"task_id": task_id, "reward": _SCORE_MIN, "done": False}
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -83,7 +93,7 @@ def run_llm_episode(client: httpx.Client, task_id: str, task_desc: str) -> dict:
 
     return {
         "task_id": task_id,
-        "reward": max(0.01, min(0.99, float(last.get("reward", 0.01)))),
+        "reward": _safe_score(last.get("reward", _SCORE_MIN)),
         "done": last.get("done", False),
     }
 
@@ -102,7 +112,7 @@ def run_hardcoded_episode(client: httpx.Client, task_id: str) -> dict:
 
     return {
         "task_id": task_id,
-        "reward": max(0.01, min(0.99, float(last.get("reward", 0.01)))),
+        "reward": _safe_score(last.get("reward", _SCORE_MIN)),
         "done": last.get("done", False),
     }
 
@@ -145,16 +155,16 @@ def main():
 
     # 🔒 FINAL CLAMP (global safety)
     for r in results:
-        r["reward"] = max(0.01, min(0.99, float(r.get("reward", 0.01))))
+        r["reward"] = _safe_score(r.get("reward", _SCORE_MIN))
 
     total = sum(r["reward"] for r in results)
-    avg = total / len(results) if results else 0.01
-    avg = max(0.01, min(0.99, avg))
+    avg = total / len(results) if results else _SCORE_MIN
+    avg = _safe_score(avg)
 
     print("\nRESULTS:")
     print(json.dumps({
         "results": results,
-        "average_reward": round(avg, 4),
+        "average_reward": round(avg, 6),
     }, indent=2))
 
 

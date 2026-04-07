@@ -24,7 +24,7 @@ class BaseGrader(ABC):
         Evaluate the current environment state.
 
         Returns:
-            reward:  float in (0.01, 0.99)
+            reward:  float in open interval (0, 1) — strictly 0 < reward < 1
             done:    True if the task is fully solved
             message: Human-readable grader message
         """
