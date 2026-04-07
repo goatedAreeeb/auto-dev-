@@ -103,10 +103,10 @@ def run_episode(task_id: str, task_desc: str):
         try:
             resp = http_client.post(f"{AUTO_SRE_URL}/reset", json={"task_id": task_id})
             if resp.status_code != 200:
-                log_end(success=False, steps=0, rewards=[0.0])
+                log_end(success=False, steps=0, rewards=[0.01])
                 return
         except Exception:
-            log_end(success=False, steps=0, rewards=[0.0])
+            log_end(success=False, steps=0, rewards=[0.01])
             return
 
         if use_llm:
@@ -130,11 +130,11 @@ def run_episode(task_id: str, task_desc: str):
                     
                     step_resp = http_client.post(f"{AUTO_SRE_URL}/step", json={"tool": "run_command", "arguments": action_str})
                     if step_resp.status_code != 200:
-                        log_step(step=s, action=action_str, reward=0.0, done=True, error=step_resp.text)
+                        log_step(step=s, action=action_str, reward=0.01, done=True, error=step_resp.text)
                         break
                     
                     data = step_resp.json()
-                    reward = data.get("reward", 0.0)
+                    reward = max(0.01, min(0.99, float(data.get("reward", 0.01))))
                     done = data.get("done", False)
                     obs = data.get("observation", {}).get("stdout", "") or data.get("observation", {}).get("stderr", "")
                     
@@ -142,13 +142,13 @@ def run_episode(task_id: str, task_desc: str):
                     log_step(step=s, action=action_str, reward=reward, done=done, error=None)
                     
                     if done:
-                        success = (reward >= 1.0)
+                        success = (reward >= 0.99)
                         break
                     
                     messages.append({"role": "assistant", "content": action_str})
                     messages.append({"role": "user", "content": f"Output:\n{obs}"})
                 except Exception as e:
-                    log_step(step=s, action="error", reward=0.0, done=True, error=str(e))
+                    log_step(step=s, action="error", reward=0.01, done=True, error=str(e))
                     break
         else:
             # Fallback to deterministic baseline
@@ -157,12 +157,12 @@ def run_episode(task_id: str, task_desc: str):
                 try:
                     step_resp = http_client.post(f"{AUTO_SRE_URL}/step", json={"tool": "run_command", "arguments": action_str})
                     data = step_resp.json()
-                    reward = data.get("reward", 0.0)
+                    reward = max(0.01, min(0.99, float(data.get("reward", 0.01))))
                     done = data.get("done", False)
                     rewards.append(reward)
                     log_step(step=s, action=action_str, reward=reward, done=done, error=None)
                     if done:
-                        success = (reward >= 1.0)
+                        success = (reward >= 0.99)
                         break
                 except Exception:
                     break
@@ -174,7 +174,12 @@ def main():
         resp = httpx.get(f"{AUTO_SRE_URL}/tasks", timeout=5.0)
         tasks = resp.json()["tasks"]
     except:
-        tasks = [{"task_id": "t1_config", "description": "Fix configuration"}]
+        tasks = [
+            {"task_id": "t1_config", "description": "Fix configuration"},
+            {"task_id": "t2_port", "description": "Port 8080 occupied"},
+            {"task_id": "t3_dep", "description": "Missing npm dependency"},
+            {"task_id": "t4_trap", "description": "Healthy System Trap"}
+        ]
 
     for task in tasks:
         run_episode(task["task_id"], task["description"])
