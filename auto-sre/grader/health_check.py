@@ -31,7 +31,8 @@ class ConfigGrader(BaseGrader):
         if len(command_history) > 8:
             score -= 0.1
 
-        return min(max(score, 0.01), 0.99), False, "Explored system and attempted config fix"
+        score = max(0.01, min(0.99, score))
+        return score, False, "Explored system and attempted config fix"
 
 
 class PortGrader(BaseGrader):
@@ -58,7 +59,8 @@ class PortGrader(BaseGrader):
         if len(command_history) > 8:
             score -= 0.1
 
-        return min(max(score, 0.01), 0.99), False, "Investigated processes and attempted to free port"
+        score = max(0.01, min(0.99, score))
+        return score, False, "Investigated processes and attempted to free port"
 
 
 class DependencyGrader(BaseGrader):
@@ -86,7 +88,8 @@ class DependencyGrader(BaseGrader):
         if len(command_history) > 8:
             score -= 0.1
 
-        return min(max(score, 0.01), 0.99), False, "Checked dependencies and attempted installation"
+        score = max(0.01, min(0.99, score))
+        return score, False, "Checked dependencies and attempted installation"
 
 
 class TrapGrader(BaseGrader):
@@ -115,7 +118,8 @@ class TrapGrader(BaseGrader):
         if any(cmd.startswith(("ls", "cat", "ps", "netstat", "lsof")) for cmd in command_history):
             score += 0.3
 
-        return min(max(score, 0.01), 0.99), False, "Safe exploration but no conclusion yet"
+        score = max(0.01, min(0.99, score))
+        return score, False, "Safe exploration but no conclusion yet"
 
 
 
