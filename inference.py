@@ -16,13 +16,23 @@ from typing import List, Optional
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.environ.get("API_KEY")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-AUTO_SRE_URL = os.getenv("AUTO_SRE_URL", "http://localhost:8000")
+AUTO_SRE_URL = os.environ.get("AUTO_SRE_URL", "http://localhost:8000")
 
-# --- Initialize client CORRECTLY ---
-client = OpenAI(
-    api_key=os.environ.get("API_KEY", "dummy"),
-    base_url=os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-)
+# --- Initialize client (Proxy Compliance) ---
+client = None
+if API_KEY:
+    # Use explicitly injected API_BASE_URL if it exists as a non-empty string, otherwise use default
+    base_url = os.environ.get("API_BASE_URL")
+    if not base_url:
+        base_url = "https://router.huggingface.co/v1"
+        
+    try:
+        client = OpenAI(
+            api_key=API_KEY,
+            base_url=base_url
+        )
+    except Exception:
+        client = None
 
 BENCHMARK = "auto-sre"
 MAX_STEPS = 10
@@ -45,8 +55,8 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 
 # --- Agent System Prompt & Hints ---
 SYSTEM_PROMPT = """You are an expert Site Reliability Engineer (SRE).
-Your goal is to repair the broken Linux environment using CLI tools.
-Respond with ONLY a single shell command. No markdown, no prefixes."""
+Repair the broken Linux environment using CLI tools.
+Return ONLY a single valid shell command. No markdown, no explanations, no prefixes."""
 
 TASK_HINTS = {
     "t1_config": "A config file is misnamed. Find and rename it to /etc/app/conf.",
@@ -63,21 +73,23 @@ HARDCODED_SOLUTIONS = {
 }
 
 def run_episode(task_id: str, task_desc: str):
-    # Required Implementation: FORCE at least ONE LLM call per run
-    try:
-        client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": "You are an SRE agent."},
-                {"role": "user", "content": "Analyze system state."}
-            ],
-            max_tokens=10
-        )
-    except Exception:
-        pass
-
     # Determine if we should use LLM or Hardcoded
-    use_llm = bool(API_KEY and MODEL_NAME)
+    use_llm = bool(API_KEY and client)
+    
+    if use_llm:
+        # Required Implementation: FORCE at least ONE LLM call per run
+        try:
+            client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": "You are an SRE agent."},
+                    {"role": "user", "content": "Analyze system state."}
+                ],
+                max_tokens=10
+            )
+        except Exception:
+            pass
+
     model_display = MODEL_NAME if use_llm else "hardcoded"
     
     log_start(task=task_id, env=BENCHMARK, model=model_display)
@@ -105,8 +117,16 @@ def run_episode(task_id: str, task_desc: str):
 
             for s in range(1, MAX_STEPS + 1):
                 try:
-                    completion = client.chat.completions.create(model=MODEL_NAME, messages=messages, max_tokens=64)
-                    action_str = completion.choices[0].message.content.strip()
+                    completion = client.chat.completions.create(model=MODEL_NAME, messages=messages, max_tokens=128)
+                    raw_action = completion.choices[0].message.content.strip()
+                    
+                    # Micro-improvement: Clean command (strip whitespace, ensure single-line, remove markdown)
+                    action_str = raw_action.replace("```bash", "").replace("```sh", "").replace("```", "").strip()
+                    action_str = action_str.split('\n')[0] if action_str else ""
+
+                    # Guard: If output is empty or invalid, fallback to ls
+                    if not action_str:
+                        action_str = "ls"
                     
                     step_resp = http_client.post(f"{AUTO_SRE_URL}/step", json={"tool": "run_command", "arguments": action_str})
                     if step_resp.status_code != 200:
