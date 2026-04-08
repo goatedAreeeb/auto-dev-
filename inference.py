@@ -72,9 +72,14 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
         rewards = [0.01]
 
     rewards_str = ",".join(f"{safe_score(r):.2f}" for r in rewards)
+    
+    # Calculate episode score precisely as OpenEnv expects
+    raw_score = sum(rewards) / len(rewards) if rewards else 0.0
+    score = max(1e-6, min(raw_score, 1 - 1e-6))
+    score = safe_score(score)
 
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
 

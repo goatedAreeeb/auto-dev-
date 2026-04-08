@@ -34,8 +34,14 @@ observation_space: "DevOpsObservation"
 action_space: "DevOpsAction"
 reward_space: "Reward"
 
-evaluation:
-  metrics:
-    - "success_rate"
-    - "partial_score"
+endpoints:
+  health: /healthz
+  reset:  /reset
+  step:   /step
+  state:  /state
+  grade:  /grader
+
+scoring:
   reward_range: [0.01, 0.99]
+  success_threshold: 0.98
+  score_formula: mean(step_rewards)
