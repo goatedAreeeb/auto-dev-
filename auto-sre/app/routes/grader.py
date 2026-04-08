@@ -58,3 +58,41 @@ async def get_grader_score() -> dict:
         "step_count": session.step_count,
         "max_steps": session.task_def.max_steps,
     }
+
+
+@router.get("/grade/{task_id}", tags=["Environment"])
+async def grade_task_by_id(task_id: str) -> dict:
+    """Validator-specific endpoint to get the strict grade for a task."""
+    session = get_session()
+
+    # Handle validator placeholder testing aliases
+    task_map = {
+        "task_1": "t1_config",
+        "task_2": "t2_port",
+        "task_3": "t3_dep",
+        "task_4": "t4_trap"
+    }
+    actual_task_id = task_map.get(task_id, task_id)
+
+    # If the session is active and matches the task, grade the CURRENT simulated state
+    if session.task_def and session.task_def.task_id == actual_task_id:
+        reward, _, _ = session.task_def.grader.grade(
+            session.sandbox.fs,
+            session.sandbox.pm,
+            session.sandbox.command_history,
+        )
+        reward = _safe_reward(reward)
+        return {"score": reward, "reward": reward}
+
+    # If the validator pings it without a matching active session, try loading it
+    try:
+        session.load_task(actual_task_id)
+        reward, _, _ = session.task_def.grader.grade(
+            session.sandbox.fs,
+            session.sandbox.pm,
+            session.sandbox.command_history,
+        )
+        reward = _safe_reward(reward)
+        return {"score": reward, "reward": reward}
+    except Exception:
+        return {"score": _SCORE_MIN, "reward": _SCORE_MIN}

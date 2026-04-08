@@ -25,9 +25,9 @@ class StepResponse(BaseModel):
 
     # 🔒 CRITICAL FIX: Use plain float (NO RootModel)
     reward: float = Field(
-        default=1e-6,
-        gt=0.0,
-        lt=1.0,
+        default=0.01,
+        ge=0.01,
+        le=0.99,
         description="Reward — strictly in (0, 1), exclusive. Values 0.0 and 1.0 are not allowed."
     )
 
