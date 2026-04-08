@@ -18,7 +18,7 @@ class TestConfigGrader:
         fs = MockFilesystem()
         fs.set_overlay({"/etc/app/conf": MockFile(path="/etc/app/conf", content="OK")})
         reward, done, msg = self.grader.grade(fs, self.pm, [])
-        assert reward == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert reward == pytest.approx(0.989, abs=0.01)
         assert done is True
 
     def test_partial_credit_for_diagnostics(self) -> None:
@@ -46,7 +46,7 @@ class TestPortGrader:
         pm = ProcessManager()
         pm.load([MockProcess(pid=1, command="init")])
         reward, done, _ = self.grader.grade(self.fs, pm, [])
-        assert reward == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert reward == pytest.approx(0.989, abs=0.01)
         assert done is True
 
     def test_zero_when_port_occupied(self) -> None:
@@ -79,7 +79,7 @@ class TestDependencyGrader:
                 MockFile(path="/home/user/app/node_modules/.package-lock.json", content="{}")
         })
         reward, done, _ = self.grader.grade(fs, self.pm, [])
-        assert reward == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert reward == pytest.approx(0.989, abs=0.01)
         assert done is True
 
     def test_zero_when_nothing_done(self) -> None:

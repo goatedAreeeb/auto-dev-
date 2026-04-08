@@ -10,8 +10,8 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-_SCORE_MIN = 1e-6
-_SCORE_MAX = 1 - 1e-6
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.989
 
 
 def _safe_reward(raw) -> float:
@@ -112,9 +112,9 @@ async def run_baseline() -> dict:
             # ❗ NO rounding anywhere
             "total_reward": total_reward,
             "average_reward": avg_reward,
-            "tasks_solved": sum(1 for r in results if r["reward"] >= 0.99),
+            "tasks_solved": sum(1 for r in results if r["reward"] >= 0.98),
             "total_tasks": len(results),
-            "all_passed": all(r["reward"] >= 0.99 for r in results),
+            "all_passed": all(r["reward"] >= 0.98 for r in results),
             "evaluation_time_seconds": elapsed,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },

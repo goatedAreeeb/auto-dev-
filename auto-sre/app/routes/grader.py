@@ -9,8 +9,8 @@ from app.routes._session import get_session
 
 router = APIRouter()
 
-_SCORE_MIN = 1e-6
-_SCORE_MAX = 1 - 1e-6
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.989
 
 
 def _safe_reward(raw) -> float:

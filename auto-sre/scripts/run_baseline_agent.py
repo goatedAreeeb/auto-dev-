@@ -13,8 +13,8 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_STEPS = 10
 
-_SCORE_MIN = 1e-6
-_SCORE_MAX = 1 - 1e-6
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.989
 
 
 SYSTEM_PROMPT = """You are an expert Site Reliability Engineer (SRE) diagnosing and repairing Linux infrastructure failures.

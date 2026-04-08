@@ -9,8 +9,8 @@ from engine.process_manager import ProcessManager
 from grader.base import BaseGrader
 
 # --- Safe score clamp: strictly in open interval (0, 1) ---
-_SCORE_MIN = 1e-6
-_SCORE_MAX = 1 - 1e-6
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.989
 
 
 def _safe_score(raw: float) -> float:

