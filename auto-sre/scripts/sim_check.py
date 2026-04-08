@@ -44,6 +44,7 @@ with httpx.Client(timeout=30.0) as client:
                 resp = client.post(f"{BASE}/step", json={"tool": "run_command", "arguments": cmd})
                 if resp.status_code == 200:
                     data = resp.json()
+                    pattern = r"\[END\] success=(true|false) steps=(\d+) score=([0-9.]+) rewards=([0-9.,]+)"
                     last_reward = data.get("reward")
                     last_done = data.get("done", False)
 
