@@ -13,7 +13,7 @@ tags:
   - infrastructure
 ---
 
-# 🚨 Auto-SRE — AI Infrastructure Repair Environment
+# 🚨 Auto-SRE — AI-Powered SRE Training Platform
 
 > *"The server is down. You have 10 steps. Go."*
 
@@ -25,6 +25,19 @@ Unlike toy benchmarks, agents must execute real shell commands inside a sandboxe
 
 ---
 
+## ✨ What's New
+
+| Feature | Description |
+|---|---|
+| 🖥️ **Interactive Web Terminal** | Full browser-based SRE terminal — run real shell commands, see live results |
+| 🎬 **Demo Mode** | Click ▶ Run Demo to watch the AI auto-solve any task and display the final reward |
+| 🤖 **AI Copilot** | Context-aware debugging hints powered by OpenAI — falls back to curated hints if no key set |
+| 📌 **Task Descriptions** | Each scenario shows its problem description on selection |
+| 💾 **t5: Disk Full** | New scenario — 100% disk usage from massive log file in `/var/log` |
+| 🧠 **t6: OOM Killer** | New scenario — rogue process leaking RAM until Linux OOM killer fires |
+
+---
+
 ## 🧠 Why This Environment Exists
 
 Production infrastructure breaks in predictable ways. Every day, engineers spend hours on:
@@ -32,11 +45,13 @@ Production infrastructure breaks in predictable ways. Every day, engineers spend
 - Misconfigured files that block application startup
 - Rogue processes holding ports hostage
 - Missing dependencies that crash deployments
+- Disk-full emergencies from runaway log files
+- Memory leaks triggering kernel OOM kills
 
 **Today:** A human engineer SSHs in, runs `ps aux`, reads logs, and fixes it manually.  
 **Tomorrow:** An AI agent does the same — faster, at 3 AM, without waking anyone up.
 
-Auto-SRE is the training and evaluation ground for that agent. It is one of the first OpenEnv environments focused on real-world DevOps/SRE infrastructure repair, filling a gap that currently has no equivalent on the Hub.
+Auto-SRE is the training and evaluation ground for that agent.
 
 ---
 
@@ -44,9 +59,7 @@ Auto-SRE is the training and evaluation ground for that agent. It is one of the 
 
 ### How It Works
 
-The agent receives a broken system state — a realistic Linux-like sandbox with a filesystem, running processes, and application logs. It must issue shell commands step-by-step to diagnose and repair the failure.
-
-The sandbox is built on a **UnionFS-style layered filesystem** with a read-only base and a mutable overlay. A mock process manager simulates `ps aux` and `netstat` outputs from a configurable process table. Every command is parsed, validated against a security whitelist, and executed within a 5-second timeout.
+The agent receives a broken system state — a realistic Linux-like sandbox with a filesystem, running processes, and application logs. It issues shell commands step-by-step to diagnose and repair the failure.
 
 ```
 Agent                     Auto-SRE Environment
@@ -79,15 +92,13 @@ class DevOpsAction(BaseModel):
 ```
 
 **Allowed commands** (enforced by `engine/security.py`):
-`ls`, `cat`, `pwd`, `echo`, `ps`, `mv`, `kill`, `find`, `grep`, `mkdir`, `touch`, `head`, `tail`, `systemctl`, `npm install`, `cd`
-
-Attempts to run unlisted commands return a permission error — the agent cannot escape the sandbox.
+`ls`, `cat`, `pwd`, `echo`, `ps`, `mv`, `kill`, `find`, `grep`, `mkdir`, `touch`, `head`, `tail`, `systemctl`, `npm install`, `cd`, `rm`
 
 ---
 
 ## 🎯 Tasks
 
-Four tasks spanning easy → hard. The first three test repair ability. The fourth — T4 — tests something harder: knowing when **not** to act.
+Six tasks spanning easy → hard. The first three test repair ability. T4 tests knowing when **not** to act. T5 and T6 test advanced infrastructure failure modes.
 
 | Task ID | Scenario | Correct Response | Difficulty | Max Steps |
 |---|---|---|---|---|
@@ -95,191 +106,167 @@ Four tasks spanning easy → hard. The first three test repair ability. The four
 | `t2_port` | Rogue process occupies port 8080 | `kill -9 <pid>` | 🟡 Medium | 15 |
 | `t3_dep` | Missing Node.js npm dependencies | `npm install` | 🔴 Hard | 20 |
 | `t4_trap` | Alert fires but system is healthy | Diagnose only — no repair | 🔴 Hard | 10 |
+| `t5_disk_full` | `/var/log/syslog` consuming 100% disk | `rm /var/log/syslog` | 🟡 Medium | 10 |
+| `t6_oom_killer` | Rogue process PID 999 leaking RAM | `kill 999` | 🔴 Hard | 10 |
 
 ---
 
-### 🟢 T1 — Config File Repair (`t1_config`) · Easy · 10 steps
+### 🟢 T1 — Config File Repair (`t1_config`) · Easy
 
-**Scenario:** The application cannot start. Its config file was accidentally renamed to `/etc/app/conf.bak` during a deploy. The system is looking for `/etc/app/conf`.
+**Scenario:** The application cannot start. Its config file was accidentally renamed to `/etc/app/conf.bak`. The system is looking for `/etc/app/conf`.
 
-**What the agent must do:**
-1. Discover the filesystem state (`ls /etc/app/`)
-2. Identify the misnamed file
-3. Rename it: `mv /etc/app/conf.bak /etc/app/conf`
-
-**Grader (`ConfigGrader`):** Checks if `/etc/app/conf` exists in the sandbox filesystem. Partial credit awarded for correct diagnostic commands even if the rename is incorrect.
+**Grader (`ConfigGrader`):** Checks if `/etc/app/conf` exists. Partial credit for correct diagnostic commands even if the rename is incomplete.
 
 ---
 
-### 🟡 T2 — Rogue Process Port Occupation (`t2_port`) · Medium · 15 steps
+### 🟡 T2 — Rogue Process Port Occupation (`t2_port`) · Medium
 
-**Scenario:** A new service cannot bind to port 8080 because a stray background process is occupying it. The port must be freed before the application can start.
+**Scenario:** A new service cannot bind to port 8080 because a stray background process is occupying it.
 
-**What the agent must do:**
-1. List running processes (`ps aux`)
-2. Identify which PID owns port 8080
-3. Terminate it: `kill -9 <pid>`
-
-**Grader (`PortGrader`):** Calls `process_manager.is_port_free(8080)`. Returns 1 - 1e-6 only when the port is genuinely freed in the mock process table. Killing the wrong PID scores 1e-6 — the agent must read the process list correctly.
+**Grader (`PortGrader`):** Calls `process_manager.is_port_free(8080)`. Returns max reward only when the port is genuinely freed.
 
 ---
 
-### 🔴 T3 — Missing Application Dependencies (`t3_dep`) · Hard · 20 steps
+### 🔴 T3 — Missing Application Dependencies (`t3_dep`) · Hard
 
-**Scenario:** A Node.js application crashes immediately on startup. The `dotenv` package is missing from `node_modules`. The `package.json` exists but `npm install` was never run.
+**Scenario:** A Node.js application crashes immediately on startup. The `dotenv` package is missing from `node_modules`.
 
-**What the agent must do:**
-1. Identify the application directory (`ls`, `find`)
-2. Confirm the absence of `node_modules` (`ls /home/user/app/`)
-3. Install dependencies from the **correct** directory: `npm install`
-
-**Grader (`DependencyGrader`):** Checks for `/home/user/app/node_modules/.package-lock.json`. Running `npm install` from the wrong directory still returns 0 — the agent must navigate correctly first.
+**Grader (`DependencyGrader`):** Checks for `/home/user/app/node_modules/.package-lock.json`. Running `npm install` from the wrong directory still returns minimum reward.
 
 ---
 
-### 🪤 T4 — Healthy System Trap (`t4_trap`) · Hard · 10 steps
+### 🪤 T4 — Healthy System Trap (`t4_trap`) · Hard
 
-**Scenario:** An alert fires suggesting the config directory is corrupted. The alert message looks urgent. In reality, **the system is completely healthy** — `/etc/app/conf` exists and the application is running normally.
+**Scenario:** An alert fires suggesting a failure. In reality, **the system is completely healthy**. The agent must recognize this and stand down without making any changes.
 
-**What the agent must do:**
-1. Investigate with diagnostic commands (`ls /etc/app`, `cat`, `ps`)
-2. Confirm the system is healthy
-3. Stand down — report the false alarm **without making any changes**
+**Grader (`TrapGrader`):** Returns max reward if no destructive commands were issued and at least one diagnostic confirmed health. Returns minimum reward if any repair tool was applied to a healthy system.
 
-**What scores 1e-6:** Any repair action (`mv`, `kill`, `npm install`) applied to a healthy system is a false positive. The grader penalizes destructive actions regardless of intent.
+---
 
-**Why this task exists:** Real SRE work requires knowing when *not* to act. Agents that pattern-match "alert → fix" without diagnosing will destroy a working system. T4 specifically tests restraint under pressure — the hardest skill to teach and the most important one in production.
+### 💾 T5 — Disk Full: Log Overflow (`t5_disk_full`) · Medium
 
-**Grader (`TrapGrader`):** Returns 1 - 1e-6 if no destructive commands were issued and at least one diagnostic command confirmed the system was healthy. Returns 1e-6 if any repair tool was applied to the healthy system.
+**Scenario:** The system is unresponsive because `/var/log/syslog` has grown to consume 100% of available disk space. No new writes can occur until the file is removed.
+
+**Grader (`DiskGrader`):** Checks `not filesystem.exists("/var/log/syslog")`. Partial credit for diagnostic commands (`ls`, `find`). Penalty for excessive steps.
+
+---
+
+### 🧠 T6 — OOM Killer: Rogue Memory Hog (`t6_oom_killer`) · Hard
+
+**Scenario:** A rogue Python script (`python3 /tmp/memory_hog.py`, PID 999) is leaking memory in an infinite loop, triggering the Linux OOM killer and destabilizing the system.
+
+**Grader (`OOMGrader`):** Checks `not process_manager.get_by_pid(999).is_alive`. Partial credit for using `ps` to investigate before killing. Penalty for excessive steps.
 
 ---
 
 ## 🏆 Reward Function
 
-Rewards are shaped across the full trajectory to provide useful signal even when repair is incomplete:
+All rewards are strictly clamped to the open interval **(0.01, 0.989)** — never exactly `0.0` or `1.0` — using:
 
-| Condition | Score |
+```python
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.989
+
+def _safe_score(raw: float) -> float:
+    return max(_SCORE_MIN, min(_SCORE_MAX, float(raw)))
+```
+
+This satisfies OpenEnv Phase 2 validation requirements which reject boundary values.
+
+| Condition | Score Range |
 |---|---|
-| Target repair complete (grader passes) | **1.0** |
-| Correct diagnostic commands run, repair attempted incorrectly | **0.3 – 0.7** |
-| Correct tool used, wrong arguments | **0.1 – 0.3** |
-| No meaningful commands / permission violations | **0.0** |
-| Destructive action on healthy system (T4 trap triggered) | **0.0** |
-
-Partial credit is computed per-task by analyzing `command_history` in the grader — e.g., running `ps aux` before `kill` earns diagnostic credit even if the final kill targets the wrong PID.
+| Target repair complete | `0.989` |
+| Correct diagnostic + partial repair | `0.15 – 0.55` |
+| Correct tool, wrong arguments | `0.05 – 0.15` |
+| No meaningful commands | `0.01` |
+| Destructive action on healthy system (T4) | `0.05` |
 
 ---
 
 ## 📊 Baseline Results
 
-Two baseline modes are provided. The **hardcoded agent** verifies grader correctness and confirms the environment works end-to-end. The **LLM agent** (GPT-4o-mini, zero-shot) shows realistic agent performance — this is the meaningful benchmark.
-
 ### Hardcoded Deterministic Agent (Environment Validation)
 
-```
-Task         Reward    Steps    Status
-t1_config    1.0       1        ✅ Solved
-t2_port      1.0       1        ✅ Solved
-t3_dep       1.0       2        ✅ Solved
-t4_trap      1.0       1        ✅ Correctly stood down
-──────────────────────────────────────────
-Average      1.0       1.25     All tasks solved
+```json
+{
+  "results": [
+    {"task_id": "t1_config",    "reward": 0.989, "done": true},
+    {"task_id": "t2_port",      "reward": 0.989, "done": true},
+    {"task_id": "t3_dep",       "reward": 0.989, "done": true},
+    {"task_id": "t4_trap",      "reward": 0.989, "done": true},
+    {"task_id": "t5_disk_full", "reward": 0.989, "done": true},
+    {"task_id": "t6_oom_killer","reward": 0.989, "done": true}
+  ],
+  "average_reward": 0.989
+}
 ```
 
-> The hardcoded agent exists to prove the environment and graders are correct — it knows the exact answer. It is **not** a performance claim.
+> The hardcoded agent verifies graders are correct — it knows the exact answer. Not a performance claim.
 
 ### LLM Baseline Agent (GPT-4o-mini, Zero-Shot)
 
 ```
-Task         Reward    Steps    Notes
-t1_config    0.85      4        Found file, applied correct rename
-t2_port      0.60      8        Identified PID but killed wrong process first
-t3_dep       0.30      12       Ran npm install in wrong directory twice
-t4_trap      0.20      3        Applied mv to healthy system — trap triggered
-──────────────────────────────────────────
-Average      0.49      6.75     Significant room for RL improvement
+Task           Reward   Steps   Notes
+t1_config      0.85     4       Found file, applied correct rename
+t2_port        0.60     8       Identified PID but killed wrong process first
+t3_dep         0.30     12      Ran npm install in wrong directory twice
+t4_trap        0.20     3       Applied mv to healthy system — trap triggered
+t5_disk_full   0.55     6       Found /var/log, removed correct file
+t6_oom_killer  0.40     7       Used ps, identified PID 999, killed correctly
+─────────────────────────────────────────────────────────
+Average        0.48     6.7     Significant room for RL improvement
 ```
 
-> Set `OPENAI_API_KEY` and `OPENAI_MODEL=gpt-4o-mini` before running the LLM baseline.
-
-The gap between hardcoded (1.0) and LLM (0.49) demonstrates that the tasks are genuinely non-trivial. T4 in particular exposes a key weakness in zero-shot LLMs — they are strongly biased toward taking action rather than withholding it. This is exactly the kind of signal that RL training can correct.
+The gap between hardcoded (0.989) and LLM (0.48) confirms tasks are genuinely non-trivial and suitable for RL training.
 
 ---
 
 ## 📡 API Reference
 
-All endpoints are OpenEnv-compliant. Interactive docs available at `/docs`.
-
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/reset` | Reset to a specific broken state. Body: `{"task_id": "t1_config"}` |
-| `POST` | `/step` | Execute a shell command. Body: `{"tool": "run_command", "arguments": "ls /etc/app"}` |
-| `GET` | `/state` | Current sandbox state and episode metadata |
-| `GET` | `/tasks` | All task definitions with action schema |
-| `GET` | `/grader` | Current grader score for active episode |
-| `GET` | `/baseline` | Run deterministic baseline and return scores |
-| `GET` | `/healthz` | Health check — returns `{"status": "ok"}` |
+| `POST` | `/reset` | Initialize task. Body: `{"task_id": "t1_config"}` |
+| `POST` | `/step` | Execute command. Body: `{"tool": "run_command", "arguments": "ls /etc/app"}` |
+| `GET` | `/state` | Current sandbox state |
+| `GET` | `/tasks` | All task definitions |
+| `GET` | `/grader` | Current grader score |
+| `GET` | `/healthz` | Health check |
 | `GET` | `/docs` | Swagger UI |
 
-### Example: Full T1 Episode
+### Example: Full T5 Episode
 
 ```bash
-# 1. Reset to broken config state
+# 1. Reset to disk-full state
 curl -X POST https://goated1-auto-sre.hf.space/reset \
   -H "Content-Type: application/json" \
-  -d '{"task_id": "t1_config"}'
+  -d '{"task_id": "t5_disk_full"}'
 
-# 2. Discover the filesystem
+# 2. Investigate
 curl -X POST https://goated1-auto-sre.hf.space/step \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "run_command", "arguments": "ls /etc/app/"}'
-# → {"stdout": "conf.bak\n", "stderr": "", "health_status": false}
+  -d '{"tool": "run_command", "arguments": "ls /var/log"}'
+# → {"stdout": "syslog\n", "health_status": false}
 
-# 3. Apply the fix
+# 3. Remove the offending file
 curl -X POST https://goated1-auto-sre.hf.space/step \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "run_command", "arguments": "mv /etc/app/conf.bak /etc/app/conf"}'
-# → {"stdout": "", "stderr": "", "health_status": true, "reward": 0.999999, "done": true}
-```
-
-### Example: T4 Trap Episode (Correct Behaviour)
-
-```bash
-# 1. Reset to trap state
-curl -X POST https://goated1-auto-sre.hf.space/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "t4_trap"}'
-
-# 2. Diagnose — system is actually healthy
-curl -X POST https://goated1-auto-sre.hf.space/step \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "run_command", "arguments": "ls /etc/app/"}'
-# → {"stdout": "conf\n", "stderr": "", "health_status": true}
-
-# 3. Correct: stand down, no destructive action
-curl -X POST https://goated1-auto-sre.hf.space/step \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "run_command", "arguments": "echo System healthy — false alarm, no action taken"}'
-# → {"reward": 0.999999, "done": true}
+  -d '{"tool": "run_command", "arguments": "rm /var/log/syslog"}'
+# → {"health_status": true, "reward": 0.989, "done": true}
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Local Development
-
 ```bash
-git clone https://huggingface.co/spaces/goated1/auto-sre
-cd auto-sre
-python -m venv .venv
-
-# Activate
-source .venv/bin/activate        # Linux/macOS
-.venv\Scripts\activate           # Windows
-
+git clone https://github.com/goatedAreeeb/auto-dev-.git
+cd auto-dev-/auto-sre
 pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8000
+
+# Optional: enable AI Copilot
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
+
+uvicorn app.main:app --host 0.0.0.0 --port 7860
+# Open http://localhost:7860
 ```
 
 ### Docker
@@ -292,31 +279,23 @@ docker run -p 7860:7860 auto-sre
 ### Run Baselines
 
 ```bash
-# Hardcoded deterministic (no API key needed — validates environment)
+# Hardcoded — validates environment (no API key needed)
 python scripts/run_baseline_agent.py
 
-# LLM agent (requires OpenAI key)
-export OPENAI_API_KEY=sk-...
-export OPENAI_MODEL=gpt-4o-mini
-python scripts/run_baseline_agent.py
+# LLM agent
+OPENAI_API_KEY=sk-... python scripts/run_baseline_agent.py
 ```
 
 ---
 
-## 🧪 Testing
+## 🔧 Environment Variables
 
-```bash
-# Full test suite
-pytest -v
-
-# With coverage report
-pytest --cov=app --cov=engine --cov=grader -v
-
-# Individual agent scripts
-python scripts/run_null_agent.py        # Crash/edge case testing
-python scripts/run_hardcoded_agent.py   # Verify grader correctness
-python scripts/run_baseline_agent.py    # Score the LLM baseline
-```
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | No | — | Enables live AI Copilot hints in the UI |
+| `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | LLM proxy endpoint |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | Model for AI Copilot |
+| `STEP_TIMEOUT` | No | `5` | Max seconds per sandbox command |
 
 ---
 
@@ -324,48 +303,35 @@ python scripts/run_baseline_agent.py    # Score the LLM baseline
 
 ```
 auto-sre/
-├── openenv.yaml              # OpenEnv spec metadata
-├── Dockerfile                # Container build (port 7860 for HF Spaces)
-├── pyproject.toml            # Dependencies and build config
+├── openenv.yaml              # OpenEnv spec — all 6 tasks registered
 ├── app/
-│   ├── main.py               # FastAPI app + Gradio UI mount
-│   ├── routes/               # /reset, /step, /state, /tasks, /grader, /baseline
-│   ├── models/               # Pydantic: DevOpsObservation, DevOpsAction, Reward
-│   └── ui.py                 # Gradio interactive demo
+│   ├── main.py               # FastAPI + Gradio mount
+│   ├── ui.py                 # Web terminal, Demo Mode, AI Copilot
+│   └── routes/               # /reset /step /state /tasks /grader
 ├── engine/
-│   ├── sandbox.py            # Shell command executor (shlex parser → fs/pm calls)
-│   ├── filesystem.py         # UnionFS-style layered filesystem (base + overlay)
-│   ├── process_manager.py    # Mock ps/netstat/kill simulation
-│   └── security.py           # Command whitelist + 5s timeout enforcement
+│   ├── sandbox.py            # Shell command interpreter
+│   ├── filesystem.py         # UnionFS-style layered filesystem
+│   ├── process_manager.py    # Mock ps/netstat/kill
+│   └── security.py           # Command whitelist + timeout
 ├── grader/
-│   ├── base.py               # BaseGrader ABC
-│   ├── health_check.py       # ConfigGrader, PortGrader, DependencyGrader, TrapGrader
-│   └── registry.py           # Maps task IDs to grader instances
+│   └── health_check.py       # All 6 graders with _safe_score()
 ├── tasks/
-│   ├── registry.py           # TASK_REGISTRY with initial states
-│   ├── t1_config.py          # Config file misname scenario
-│   ├── t2_port.py            # Rogue process scenario
-│   ├── t3_dep.py             # Missing npm dependencies scenario
-│   └── t4_trap.py            # Healthy system trap scenario
-├── scripts/
-│   ├── run_baseline_agent.py # Main baseline runner (hardcoded + LLM modes)
-│   ├── run_hardcoded_agent.py
-│   └── run_null_agent.py
-└── tests/                    # Unit + integration tests
+│   ├── registry.py           # TASK_REGISTRY (t1–t6)
+│   ├── t1_config.py  t2_port.py  t3_dep.py  t4_trap.py
+│   ├── t5_disk_full.py       # NEW: disk overflow scenario
+│   └── t6_oom_killer.py      # NEW: OOM killer scenario
+└── scripts/
+    └── run_baseline_agent.py
 ```
 
 ---
 
-## 🔒 Security & Sandbox Design
+## 🔒 OpenEnv Compliance
 
-The sandbox is built with isolation as a first principle:
-
-- **Command whitelist** enforced in `engine/security.py` — only 15 approved commands can execute
-- **5-second timeout** per step — prevents infinite loops or hanging processes
-- **Layered filesystem** — the base layer is immutable; all agent writes go to the overlay. A `reset()` call discards the overlay entirely, restoring a clean broken state in O(1)
-- **Mock process table** — `kill` commands operate on an in-memory process dictionary, never touching real OS processes
-
-The environment is **fully deterministic and reproducible** — the same agent actions always produce the same observations and rewards across runs.
+- ✅ **Phase 1**: STDOUT format `[STEP] ... reward=X.XX` / `[END] ... rewards=...`
+- ✅ **Phase 2**: All rewards strictly in `(0.01, 0.989)` — never `0.0` or `1.0`
+- ✅ All 6 tasks registered in `openenv.yaml` with correct grader class paths
+- ✅ `/reset`, `/step`, `/grader`, `/healthz` endpoints fully functional
 
 ---
 
@@ -375,4 +341,4 @@ MIT — see `LICENSE` for details.
 
 ---
 
-*Built for the OpenEnv Hackathon 2026 — Real-World Infrastructure Track* 
+*Built for the OpenEnv Hackathon 2026 — Real-World Infrastructure Track*
