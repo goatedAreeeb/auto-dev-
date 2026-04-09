@@ -9,7 +9,7 @@ from engine.filesystem import MockFilesystem
 from engine.process_manager import ProcessManager
 from grader.base import BaseGrader
 
-from tasks import t1_config, t2_port, t3_dep, t4_trap
+from tasks import t1_config, t2_port, t3_dep, t4_trap, t5_disk_full, t6_oom_killer
 
 
 @dataclass
@@ -53,6 +53,20 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         max_steps=t4_trap.MAX_STEPS,
         build_initial_state=t4_trap.build_initial_state,
         grader=t4_trap.GRADER,
+    ),
+    t5_disk_full.TASK_ID: TaskDefinition(
+        task_id=t5_disk_full.TASK_ID,
+        description=t5_disk_full.DESCRIPTION,
+        max_steps=t5_disk_full.MAX_STEPS,
+        build_initial_state=t5_disk_full.build_initial_state,
+        grader=t5_disk_full.GRADER,
+    ),
+    t6_oom_killer.TASK_ID: TaskDefinition(
+        task_id=t6_oom_killer.TASK_ID,
+        description=t6_oom_killer.DESCRIPTION,
+        max_steps=t6_oom_killer.MAX_STEPS,
+        build_initial_state=t6_oom_killer.build_initial_state,
+        grader=t6_oom_killer.GRADER,
     ),
 }
 

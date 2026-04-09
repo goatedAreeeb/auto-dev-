@@ -205,7 +205,7 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
                 gr.HTML("<h3 style='margin-bottom: 20px;'>🕹️ Task Control</h3>")
                 
                 task_dropdown = gr.Dropdown(
-                    choices=["t1_config", "t2_port", "t3_dep", "t4_trap"],
+                    choices=["t1_config", "t2_port", "t3_dep", "t4_trap", "t5_disk_full", "t6_oom_killer"],
                     label="Select Scenario",
                     value="t1_config"
                 )

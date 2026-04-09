@@ -39,6 +39,8 @@ HARDCODED_SOLUTIONS = {
     "t2_port": ["kill -9 512"],
     "t3_dep": ["cd /home/user/app", "npm install"],
     "t4_trap": ["ls /etc/app"],
+    "t5_disk_full": ["rm /var/log/syslog"],
+    "t6_oom_killer": ["kill 999"],
 }
 
 

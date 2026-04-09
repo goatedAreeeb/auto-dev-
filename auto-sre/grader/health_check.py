@@ -135,3 +135,58 @@ class TrapGrader(BaseGrader):
             score += 0.3
 
         return _safe_score(score), False, "Safe exploration but no conclusion yet"
+
+
+class DiskGrader(BaseGrader):
+    """Grader for t5_disk_full — massive /var/log/syslog file."""
+
+    def grade(
+        self,
+        filesystem: MockFilesystem,
+        process_manager: ProcessManager,
+        command_history: list[str],
+    ) -> tuple[float, bool, str]:
+        # 1. Success check: The massive log file should be removed
+        if not filesystem.exists("/var/log/syslog"):
+            return _safe_score(0.99), True, "Large log file successfully deleted"
+
+        # 2. Partial reward
+        score = 0.05
+        if any(cmd.startswith(("ls", "df", "du", "find")) for cmd in command_history):
+            score += 0.1
+        if any(cmd.startswith("rm") for cmd in command_history):
+            score += 0.4
+
+        # 3. Efficiency penalty
+        if len(command_history) > 8:
+            score -= 0.1
+
+        return _safe_score(score), False, "Investigated disk space and attempted cleanup"
+
+
+class OOMGrader(BaseGrader):
+    """Grader for t6_oom_killer — rogue memory hog process."""
+
+    def grade(
+        self,
+        filesystem: MockFilesystem,
+        process_manager: ProcessManager,
+        command_history: list[str],
+    ) -> tuple[float, bool, str]:
+        # 1. Success check: PID 999 should be killed
+        proc = process_manager.get_by_pid(999)
+        if not proc or not proc.is_alive:
+            return _safe_score(0.99), True, "Rogue memory hog process killed"
+
+        # 2. Partial reward
+        score = 0.05
+        if any(cmd.startswith(("ps", "top", "free")) for cmd in command_history):
+            score += 0.1
+        if any(cmd.startswith("kill") for cmd in command_history):
+            score += 0.4
+
+        # 3. Efficiency penalty
+        if len(command_history) > 8:
+            score -= 0.1
+
+        return _safe_score(score), False, "Investigated memory usage and attempted to kill processes"
