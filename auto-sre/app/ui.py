@@ -166,7 +166,7 @@ DEMO_SOLUTIONS = {
     "t1_config": ["ls /etc/app", "mv /etc/app/conf.bak /etc/app/conf", "systemctl restart app"],
     "t2_port": ["ps", "kill -9 {rogue_pid}", "systemctl restart app"],
     "t3_dep": ["npm install", "systemctl restart app"],
-    "t4_trap": ["cat /etc/app/conf", "ps", "netstat"],
+    "t4_trap": ["ls /etc/app", "cat /etc/app/conf", "ps"],
     "t5_disk_full": ["rm /var/log/syslog"],
     "t6_oom_killer": ["ps", "kill -9 {rogue_pid}"],
     "t7_cascading_meltdown": ["df -h", "rm /var/log/syslog", "ps", "kill -9 {rogue_pid}", "systemctl restart db"],

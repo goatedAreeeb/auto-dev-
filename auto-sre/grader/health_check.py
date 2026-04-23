@@ -233,47 +233,20 @@ class TrapGrader(BaseGrader):
     ) -> tuple[float, bool, str]:
         state = state or {}
 
-        # Safe diagnostic commands — never penalized, never destructive
-        SAFE_COMMANDS = ("ls", "cat", "ps", "netstat", "lsof", "find", "grep", "df", "free", "top", "ss", "pwd", "cd", "echo", "head", "tail", "stat", "du")
+        SAFE_PREFIXES = ("ps", "ls", "cat")
+        DESTRUCTIVE_PREFIXES = ("kill", "rm", "mv", "systemctl", "npm")
 
-        # Strictly destructive commands — only these can end episode with failure
-        DESTRUCTIVE_CMDS = ("kill", "rm", "mv", "npm install", "systemctl stop", "systemctl kill")
-
-        def is_destructive(cmd: str) -> bool:
-            stripped = cmd.strip()
-            # Whitelist takes priority
-            if any(stripped.startswith(s) for s in SAFE_COMMANDS):
-                return False
-            return any(stripped.startswith(d) for d in DESTRUCTIVE_CMDS)
-
-        # Failure condition: destructive action taken on an already-healthy system
-        if any(is_destructive(cmd) for cmd in command_history):
+        # If ANY destructive command is used → penalize
+        if any(cmd.strip().startswith(DESTRUCTIVE_PREFIXES) for cmd in command_history):
             state["health_status"] = False
-            return _safe_score(0.05), True, "Incorrect action system was already healthy"
+            return _safe_score(0.01), True, "Unnecessary destructive action in healthy system"
 
-        # Success: diagnosed thoroughly and abstained correctly
-        diagnostic_cmds = ("ls", "cat", "ps", "netstat", "lsof", "find", "grep", "df")
-        diagnostic_count = sum(
-            1 for cmd in command_history
-            if any(cmd.startswith(d) for d in diagnostic_cmds)
-        )
+        # If ONLY safe commands are used → success
+        if len(command_history) >= 1 and all(cmd.strip().startswith(SAFE_PREFIXES) for cmd in command_history):
+            return _safe_score(0.97), True, "Correctly identified no-op (healthy system)"
 
-        if diagnostic_count >= 3:
-            return _safe_score(0.97), True, "Correctly identified healthy system and abstained"
-
-        # Dynamic partial rewards for exploration
-        total_reward = 0.0
-
-        if any("cat" in cmd and "conf" in cmd for cmd in command_history):
-            total_reward += 0.15
-        if any(cmd.startswith("ps") for cmd in command_history):
-            total_reward += 0.15
-        if any(cmd.startswith(("netstat", "lsof", "ss")) for cmd in command_history):
-            total_reward += 0.20
-        if any(cmd.startswith(("ls", "find")) for cmd in command_history):
-            total_reward += 0.10
-
-        return _safe_score(max(total_reward, 0.02)), False, "Diagnosing system, no conclusion yet"
+        # Default fallback (no meaningful action yet)
+        return _safe_score(0.05), False, "Awaiting safe diagnostic action"
 
 
 class DiskGrader(BaseGrader):
