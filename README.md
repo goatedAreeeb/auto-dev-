@@ -5,6 +5,7 @@ colorFrom: indigo
 colorTo: purple
 sdk: gradio
 sdk_version: "4.26.0"
+python_version: "3.11"
 app_file: auto-sre/app.py
 pinned: false
 ---
@@ -72,7 +73,7 @@ A fully functional browser-based terminal where you can run shell commands like 
 - Real-time reward score and system health display
 - Command history log
 
-<<<<<<< Updated upstream
+
 ### 🎬 Demo Mode
 Click **▶ Run Demo** to watch the AI solve any task automatically, showing the optimal command sequence and final reward score. Guarantees judges always see a successful resolution.
 
