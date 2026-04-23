@@ -160,10 +160,10 @@ DEMO_SOLUTIONS = {
     "t4_trap": ["ls /etc/app", "ps"],
     "t5_disk_full": ["ls /var/log", "rm /var/log/syslog"],
     "t6_oom_killer": ["ps", "kill 999"],
-    "t7_cascading_meltdown": ["df -h", "rm /var/log/syslog", "ps", "kill -9 999", "systemctl restart db", "systemctl restart cache", "systemctl restart app", "ps"],
-    "t8_memory_leak_loop": ["ps", "kill -9 111", "kill -9 222"],
-    "t9_dependency_chain_failure": ["cat /etc/network/interfaces", "mv /etc/network/interfaces.bak /etc/network/interfaces", "systemctl restart networking", "systemctl restart db", "systemctl restart app", "ps"],
-    "t10_config_secret_failure": ["ls -l /etc/secrets", "chmod 400 /etc/secrets/key.pem", "systemctl restart app", "ps"],
+    "t7_cascading_meltdown": ["df -h", "rm /var/log/syslog", "ps", "kill -9 999", "systemctl restart db", "systemctl restart app"],
+    "t8_memory_leak_loop": ["free -m", "ps aux", "kill -9 999", "systemctl restart leak-daemon", "systemctl status leak-daemon"],
+    "t9_dependency_chain_failure": ["systemctl status app", "cat /var/log/app.log", "systemctl restart db", "systemctl restart cache", "systemctl restart app"],
+    "t10_config_secret_failure": ["systemctl status app", "cat /var/log/app.log", "cat /etc/app/secrets.conf", "echo DB_PASSWORD=CORRECT_SECRET > /etc/app/secrets.conf", "systemctl restart app"],
 }
 
 def update_task_description(task_id: str) -> str:
