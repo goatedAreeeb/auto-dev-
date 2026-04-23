@@ -109,6 +109,15 @@ CSS = """
     font-weight: bold;
     text-shadow: 0 0 10px rgba(239,68,68,0.5);
 }
+.health-wait {
+    color: #fbbf24;
+    font-weight: bold;
+    text-shadow: 0 0 10px rgba(251,191,36,0.5);
+}
+.health-neutral {
+    color: #94a3b8;
+    font-weight: bold;
+}
 
 /* AI Copilot Hint */
 .ai-hint-box {
@@ -268,7 +277,7 @@ Guide the next step."""
 async def api_reset(task_id: str):
     """Call the backend reset API and initialize the terminal UI."""
     if not task_id:
-        return "Please select a task.", "", 0.0, "<span class='health-bad'>🔴 BROKEN</span>", "Select a task first."
+        return "Please select a task.", "", 0.0, "<span class='health-neutral'>⚪ NO TASK</span>", "Select a task first."
         
     async with httpx.AsyncClient() as client:
         try:
@@ -277,11 +286,11 @@ async def api_reset(task_id: str):
             data = resp.json()
             
             cwd = data.get("cwd", "/home/user")
-            health = data.get("health_status", False)
             
             term_out = f"=== Auto-SRE Sandbox Initialized ===\nWelcome to Scenario: {task_id}\nHint: Type shell commands to diagnose and repair.\n\n$ {cwd} > "
             
-            health_str = "<span class='health-good'>🟢 HEALTHY</span>" if health else "<span class='health-bad'>🔴 BROKEN</span>"
+            # On init the environment IS broken (that's the task) — show neutral awaiting state
+            health_str = "<span class='health-wait'>🟡 AWAITING FIX</span>"
             
             return term_out, cwd, 0.01, health_str, "Environment Reset: " + task_id
             
@@ -307,12 +316,16 @@ async def api_step(cmd_input: str, term_history: str, current_cwd: str, history_
             resp.raise_for_status()
             data = resp.json()
             
-            stdout = data.get("stdout", "")
-            stderr = data.get("stderr", "")
-            new_cwd = data.get("cwd", current_cwd)
-            health = data.get("health_status", False)
-            reward = data.get("reward", 0.01)
+            # step API nests observation fields under "observation" key
+            obs = data.get("observation", data)
+            stdout = obs.get("stdout", "")
+            stderr = obs.get("stderr", "")
+            new_cwd = obs.get("cwd", current_cwd)
+            # done=True AND grader returned done means the task is successfully resolved
             done = data.get("done", False)
+            reward = data.get("reward", 0.01)
+            # health_status in observation is True only when grader marks done=True with success
+            health = done and reward > 0.5
             
             # Combine formatting
             cmd_echo = f"{cmd_input}\n"
@@ -330,9 +343,12 @@ async def api_step(cmd_input: str, term_history: str, current_cwd: str, history_
             h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>{obs_out}</span></div>"
             new_history_html = h_entry + history_html
             
-            health_str = "<span class='health-good'>🟢 HEALTHY (PASS)</span>" if health else "<span class='health-bad'>🔴 BROKEN</span>"
-            if done and not health:
+            if health:
+                health_str = "<span class='health-good'>🟢 HEALTHY (PASS)</span>"
+            elif done and not health:
                 health_str = "<span class='health-bad'>❌ FAILED / OVER</span>"
+            else:
+                health_str = "<span class='health-wait'>🟡 AWAITING FIX</span>"
             
             return term_out, "", new_cwd, reward, health_str, new_history_html
             
