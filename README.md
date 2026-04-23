@@ -2,7 +2,7 @@
 title: Auto-SRE
 emoji: 🚨
 colorFrom: indigo
-colorTo: slate
+colorTo: purple
 sdk: gradio
 sdk_version: "4.26.0"
 app_file: auto-sre/app.py
