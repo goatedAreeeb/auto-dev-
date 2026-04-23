@@ -184,6 +184,19 @@ TASK_DESCRIPTIONS = {
     "t10_config_secret_failure": "🔒 App crashes due to authentication failure. Inspect logs, find the invalid config secret, update it, and restart the app."
 }
 
+DEMO_SOLUTIONS = {
+    "t1_config": ["ls /etc/app", "mv /etc/app/conf.bak /etc/app/conf", "systemctl restart app"],
+    "t2_port": ["ps", "kill -9 {rogue_pid}", "systemctl restart app"],
+    "t3_dep": ["npm install", "systemctl restart app"],
+    "t4_trap": ["ls /etc/app", "cat /etc/app/conf", "ps"],
+    "t5_disk_full": ["rm /var/log/syslog"],
+    "t6_oom_killer": ["ps", "kill -9 {rogue_pid}"],
+    "t7_cascading_meltdown": ["df -h", "rm /var/log/syslog", "ps", "kill -9 {rogue_pid}", "systemctl restart db"],
+    "t8_memory_leak_loop": ["ps", "kill -9 {rogue_pid}", "systemctl restart leak-daemon"],
+    "t9_dependency_chain_failure": ["systemctl restart db", "systemctl restart cache", "systemctl restart app"],
+    "t10_config_secret_failure": ["systemctl status app", "cat /var/log/app.log", "cat /etc/app/secrets.conf", "echo DB_PASSWORD=CORRECT_SECRET > /etc/app/secrets.conf", "systemctl restart app"],
+}
+
 def update_task_description(task_id: str) -> str:
     """Return HTML for the selected task's description."""
     desc = TASK_DESCRIPTIONS.get(task_id, "Select a scenario to see its description.")
@@ -446,22 +459,110 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
         outputs=[run_agent_btn, agent_log]
     )
 
-    async def simulate_agent():
-        steps = [
-            "🧠 Commander: Analyzing system state...",
-            "🧠 Commander: Analyzing system state...\n📋 Planner: Creating recovery plan...",
-            "🧠 Commander: Analyzing system state...\n📋 Planner: Creating recovery plan...\n⚙️ Executor: Running commands...",
-            "🧠 Commander: Analyzing system state...\n📋 Planner: Creating recovery plan...\n⚙️ Executor: Running commands...\n🔍 Critic: Validating system health...",
-            "🧠 Commander: Analyzing system state...\n📋 Planner: Creating recovery plan...\n⚙️ Executor: Running commands...\n🔍 Critic: Validating system health...\n✅ Task completed successfully"
-        ]
-        for step in steps:
-            yield step
-            await asyncio.sleep(1.2)
+    async def run_multi_agent(task_id: str):
+        if not task_id:
+            yield "Please select a task.", "", "", 0.01, "<span class='health-neutral'>&#9898; NO TASK</span>", ""
+            return
+
+        logs = "🧠 Commander: Initializing environment...\n"
+        term_out = f"=== Multi-Agent MODE ===\nTask: {task_id}\nInitializing...\n\n"
+        history_html = ""
+        reward = 0.01
+        done = False
+        known_rogue_pid = None
+        cwd = "/home/user"
+        health_str = "<span class='health-wait'>&#9888; AWAITING FIX</span>"
+
+        yield logs, term_out, cwd, reward, health_str, history_html
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(f"{API_BASE}/reset", json={"task_id": task_id})
+                resp.raise_for_status()
+                data = resp.json()
+                cwd = data.get("cwd", "/home/user")
+            except Exception as e:
+                logs += f"❌ Commander Error: {e}\n"
+                yield logs, term_out, cwd, reward, health_str, history_html
+                return
+
+            await asyncio.sleep(0.5)
+
+            logs += "📋 Planner: Generating execution plan...\n"
+            yield logs, term_out, cwd, reward, health_str, history_html
+            await asyncio.sleep(0.5)
+
+            cmds = DEMO_SOLUTIONS.get(task_id, ["ps"])
+
+            for cmd in cmds:
+                # Substitute rogue PID
+                if "{rogue_pid}" in cmd:
+                    cmd = cmd.replace("{rogue_pid}", str(known_rogue_pid) if known_rogue_pid else "999")
+
+                logs += f"⚙️ Executor: Running `{cmd}`\n"
+                yield logs, term_out, cwd, reward, health_str, history_html
+
+                try:
+                    resp = await client.post(f"{API_BASE}/step", json={"tool": "run_command", "arguments": cmd})
+                    resp.raise_for_status()
+                    d = resp.json()
+
+                    obs_data = d.get("observation", d)
+                    stdout = obs_data.get("stdout", "")
+                    stderr = obs_data.get("stderr", "")
+                    cwd = obs_data.get("cwd", cwd)
+                    reward = d.get("reward", reward)
+                    done = d.get("done", False)
+
+                    # Parse rogue PID
+                    if cmd.strip().startswith("ps") and stdout and known_rogue_pid is None:
+                        for line in stdout.splitlines():
+                            low = line.lower()
+                            if any(k in low for k in ("rogue", "leak-daemon --no-limit", "rogue-logger", "rogue-server", "memory-hog")):
+                                parts = line.split()
+                                for p in parts:
+                                    if p.isdigit() and int(p) > 1:
+                                        known_rogue_pid = int(p)
+                                        break
+
+                    obs = stdout or stderr or ""
+                    term_out += f"$ {cmd}\n{obs}\n"
+                    h_entry = f"<div class='history-item'><b>&gt; {cmd}</b><br><span class='history-out'>{obs}</span></div>"
+                    history_html = h_entry + history_html
+
+                    # Update health strictly
+                    if done and reward > 0.5:
+                        health_str = "<span class='health-good'>&#129001; HEALTHY (PASS)</span>"
+                    elif done:
+                        health_str = "<span class='health-bad'>&#10060; FAILED</span>"
+
+                    yield logs, term_out, cwd, reward, health_str, history_html
+                    await asyncio.sleep(0.8)
+
+                    if done:
+                        break
+
+                except Exception as e:
+                    logs += f"❌ Executor Error: {e}\n"
+                    term_out += f"$ {cmd}\n[ERROR: {e}]\n"
+                    yield logs, term_out, cwd, reward, health_str, history_html
+                    break
+
+            logs += "🔍 Critic: Evaluating system state...\n"
+            yield logs, term_out, cwd, reward, health_str, history_html
+            await asyncio.sleep(0.5)
+
+            if done and reward > 0.5:
+                logs += "✅ Task execution complete\n"
+            else:
+                logs += "⚠️ Task execution failed to reach healthy state\n"
+                
+            yield logs, term_out, cwd, reward, health_str, history_html
 
     run_agent_btn.click(
-        fn=simulate_agent,
-        inputs=[],
-        outputs=[agent_log]
+        fn=run_multi_agent,
+        inputs=[task_dropdown],
+        outputs=[agent_log, terminal_out, cwd_state, score_display, health_display, history_html]
     )
 
     task_dropdown.change(
