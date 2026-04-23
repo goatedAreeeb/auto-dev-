@@ -348,7 +348,7 @@ async def api_step(tool: str, cmd_input: str, current_cwd: str, term_history: st
 
 _theme = gr.themes.Base(primary_hue="emerald", neutral_hue="emerald")
 
-with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
+with gr.Blocks() as demo:
     gr.HTML("""
     <div style="text-align: center; margin-bottom: 30px;">
         <h1 style="color: #ffffff; font-weight: 800; font-size: 2.5em; text-shadow: 0 0 20px rgba(16, 185, 129,0.8);">
@@ -627,4 +627,4 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, head="<style>" + CSS + "</style>", theme=_theme)
