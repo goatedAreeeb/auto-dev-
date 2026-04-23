@@ -8,7 +8,7 @@ import gradio as gr  # type: ignore
 from openai import AsyncOpenAI
 
 # The API base URL on which the app internally runs natively alongside the UI
-API_BASE = os.getenv("AUTO_SRE_URL", "http://localhost:8000")
+API_BASE = "http://127.0.0.1:7860"
 CSS = """
 .gradio-container {
     background: radial-gradient(circle at 50% 0%, #311bb6 0%, #0f172a 50%, #020617 100%) !important;
@@ -134,6 +134,10 @@ FALLBACK_HINTS = {
     "t4_trap": "Don't change anything yet — verify the system state first.",
     "t5_disk_full": "Check large log files in /var/log. Use `ls` or `find`.",
     "t6_oom_killer": "Look for memory-heavy processes using `ps` and kill the rogue one.",
+    "t7_cascading_meltdown": "Multiple failures. Check disk, memory, and services in order.",
+    "t8_memory_leak_loop": "A script keeps spawning leakers. Kill the root script first.",
+    "t9_dependency_chain_failure": "Network is misconfigured, preventing db start. Check /etc/network/interfaces.",
+    "t10_config_secret_failure": "Secret file is unreadable. Fix permissions before starting app."
 }
 
 TASK_DESCRIPTIONS = {
@@ -143,6 +147,10 @@ TASK_DESCRIPTIONS = {
     "t4_trap": "🪤 Trap scenario — the system may already be healthy. Investigate before taking any action.",
     "t5_disk_full": "💾 Disk is 100% full due to a massive log file in /var/log. Identify and remove it to restore service.",
     "t6_oom_killer": "🧠 A rogue process is leaking memory, triggering OOM killer. Find and terminate the memory hog.",
+    "t7_cascading_meltdown": "🔥 Critical failure chain: disk is full, rogue processes exist, and services are down. System needs a full recovery.",
+    "t8_memory_leak_loop": "🔄 A background script continuously spawns memory leakers. Stop the cycle and clean up.",
+    "t9_dependency_chain_failure": "🔗 App needs DB, DB needs network. Network config is broken. Fix the chain to restore service.",
+    "t10_config_secret_failure": "🔒 App crashes because it can't read a secret key file due to incorrect permissions. Fix it."
 }
 
 DEMO_SOLUTIONS = {
@@ -152,6 +160,10 @@ DEMO_SOLUTIONS = {
     "t4_trap": ["ls /etc/app", "ps"],
     "t5_disk_full": ["ls /var/log", "rm /var/log/syslog"],
     "t6_oom_killer": ["ps", "kill 999"],
+    "t7_cascading_meltdown": ["df -h", "rm /var/log/syslog", "ps", "kill -9 999", "systemctl restart db", "systemctl restart cache", "systemctl restart app", "ps"],
+    "t8_memory_leak_loop": ["ps", "kill -9 111", "kill -9 222"],
+    "t9_dependency_chain_failure": ["cat /etc/network/interfaces", "mv /etc/network/interfaces.bak /etc/network/interfaces", "systemctl restart networking", "systemctl restart db", "systemctl restart app", "ps"],
+    "t10_config_secret_failure": ["ls -l /etc/secrets", "chmod 400 /etc/secrets/key.pem", "systemctl restart app", "ps"],
 }
 
 def update_task_description(task_id: str) -> str:
@@ -349,7 +361,7 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
                 gr.HTML("<h3 style='margin-bottom: 20px;'>🕹️ Task Control</h3>")
                 
                 task_dropdown = gr.Dropdown(
-                    choices=["t1_config", "t2_port", "t3_dep", "t4_trap", "t5_disk_full", "t6_oom_killer"],
+                    choices=["t1_config", "t2_port", "t3_dep", "t4_trap", "t5_disk_full", "t6_oom_killer", "t7_cascading_meltdown", "t8_memory_leak_loop", "t9_dependency_chain_failure", "t10_config_secret_failure"],
                     label="Select Scenario",
                     value="t1_config"
                 )
