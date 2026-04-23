@@ -11,127 +11,129 @@ from openai import AsyncOpenAI
 API_BASE = os.getenv("AUTO_SRE_URL", "http://127.0.0.1:8000")
 CSS = """
 .gradio-container {
-    background: radial-gradient(circle at 50% 0%, #311bb6 0%, #0f172a 50%, #020617 100%) !important;
+    background: radial-gradient(circle at 50% 0%, #112240 0%, #0a192f 60%, #020c1b 100%) !important;
     font-family: 'Inter', system-ui, sans-serif !important;
-    color: #f8fafc !important;
+    color: #ccd6f6 !important;
 }
 
 /* Glassmorphism Panels */
 .glass-panel {
-    background: rgba(15, 23, 42, 0.6) !important;
-    backdrop-filter: blur(16px) !important;
-    -webkit-backdrop-filter: blur(16px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 16px !important;
-    padding: 30px !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(99, 102, 241, 0.05) !important;
+    background: rgba(17, 34, 64, 0.75) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(100, 255, 218, 0.1) !important;
+    border-radius: 12px !important;
+    padding: 24px !important;
+    box-shadow: 0 10px 30px -10px rgba(2, 12, 27, 0.7) !important;
 }
 
-/* Output Cards */
-.output-card {
-    background: rgba(30, 41, 59, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-}
-
+/* Terminal Box */
 .terminal-box textarea {
-    background: #000000 !important;
-    color: #34d399 !important;
-    font-family: 'Fira Code', monospace !important;
-    border: 1px solid rgba(52, 211, 153, 0.3) !important;
+    background: #020c1b !important;
+    color: #64ffda !important;
+    font-family: 'Fira Code', 'JetBrains Mono', monospace !important;
+    border: 1px solid rgba(100, 255, 218, 0.2) !important;
     border-radius: 8px !important;
+    font-size: 0.95em !important;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5) !important;
 }
 
 .terminal-input textarea {
-    background: #1e293b !important;
-    color: #f8fafc !important;
-    font-family: 'Fira Code', monospace !important;
-    border: 2px solid rgba(99, 102, 241, 0.5) !important;
+    background: rgba(17, 34, 64, 0.9) !important;
+    color: #e6f1ff !important;
+    font-family: 'Fira Code', 'JetBrains Mono', monospace !important;
+    border: 1px solid rgba(100, 255, 218, 0.3) !important;
     border-radius: 8px !important;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.5) !important;
+    transition: all 0.2s ease-in-out !important;
 }
 .terminal-input textarea:focus {
-    border-color: #818cf8 !important;
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.4) !important;
+    border-color: #64ffda !important;
+    box-shadow: 0 0 15px rgba(100, 255, 218, 0.15) !important;
+    outline: none !important;
 }
 
+/* Buttons */
 .analyze-btn {
-    background: linear-gradient(135deg, #4f46e5, #9333ea) !important;
-    border: none !important;
-    color: white !important;
-    font-weight: 800 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 0 15px rgba(147, 51, 234, 0.4) !important;
-    transition: all 0.3s ease !important;
+    background: rgba(100, 255, 218, 0.1) !important;
+    border: 1px solid #64ffda !important;
+    color: #64ffda !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
 }
 .analyze-btn:hover {
-    box-shadow: 0 0 25px rgba(147, 51, 234, 0.7) !important;
-    transform: translateY(-2px);
+    background: rgba(100, 255, 218, 0.2) !important;
+    transform: translateY(-1px);
 }
 
+/* History / Command Log Fixes */
 .history-panel {
-    background: rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    background: rgba(2, 12, 27, 0.6);
+    border: 1px solid rgba(100, 255, 218, 0.15);
     border-radius: 8px;
-    padding: 16px;
+    padding: 12px;
     height: 100%;
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-wrap: break-word;
 }
 .history-item {
-    font-family: monospace;
-    color: #a5b4fc;
+    font-family: 'Fira Code', monospace;
+    color: #8892b0;
     margin-bottom: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
     padding-bottom: 8px;
+    font-size: 0.85em;
 }
 .history-out {
-    color: #94a3b8;
-    font-size: 0.9em;
+    color: #64ffda;
     white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: break-word;
 }
 
+/* Score and Health */
 .score-display {
     font-size: 2.5em;
     font-weight: 900;
-    color: #34d399;
-    text-shadow: 0 0 20px rgba(52, 211, 153, 0.5);
+    color: #64ffda;
+    text-shadow: 0 0 15px rgba(100, 255, 218, 0.3);
 }
 
 .health-good {
-    color: #34d399;
+    color: #64ffda;
     font-weight: bold;
-    text-shadow: 0 0 10px rgba(52,211,153,0.5);
+    text-shadow: 0 0 10px rgba(100,255,218,0.3);
 }
 .health-bad {
     color: #ef4444;
     font-weight: bold;
-    text-shadow: 0 0 10px rgba(239,68,68,0.5);
+    text-shadow: 0 0 10px rgba(239,68,68,0.3);
 }
 .health-wait {
     color: #fbbf24;
     font-weight: bold;
-    text-shadow: 0 0 10px rgba(251,191,36,0.5);
+    text-shadow: 0 0 10px rgba(251,191,36,0.3);
 }
 .health-neutral {
-    color: #94a3b8;
+    color: #8892b0;
     font-weight: bold;
 }
 
-/* AI Copilot Hint */
+/* AI Hint Box */
 .ai-hint-box {
-    background: rgba(147, 51, 234, 0.15);
-    border-left: 4px solid #9333ea;
+    background: rgba(14, 165, 233, 0.1);
+    border-left: 3px solid #0ea5e9;
     border-radius: 4px;
     padding: 12px;
     margin-bottom: 12px;
-    font-size: 0.95em;
-    color: #e9d5ff;
+    font-size: 0.9em;
+    color: #e0f2fe;
 }
 .ai-hint-title {
     font-weight: bold;
-    color: #c084fc;
+    color: #38bdf8;
     margin-bottom: 4px;
 }
 """
@@ -395,10 +397,10 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
     """)
     
     with gr.Row(equal_height=True):
-        # Left Panel (Scoreboard & Controls - 30%)
-        with gr.Column(scale=3):
+        # Left Panel (Scoreboard, Controls & History - 30%)
+        with gr.Column(scale=1):
             with gr.Column(elem_classes="glass-panel"):
-                gr.HTML("<h3 style='margin-bottom: 20px;'>🕹️ Task Control</h3>")
+                gr.HTML("<h3 style='margin-bottom: 20px; color: #ccd6f6;'>🕹️ Task Control</h3>")
                 
                 task_dropdown = gr.Dropdown(
                     choices=["t1_config", "t2_port", "t3_dep", "t4_trap", "t5_disk_full", "t6_oom_killer", "t7_cascading_meltdown", "t8_memory_leak_loop", "t9_dependency_chain_failure", "t10_config_secret_failure"],
@@ -409,22 +411,27 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
                 reset_btn = gr.Button("🔄 Initialize Sandbox", elem_classes="analyze-btn")
                 demo_btn = gr.Button("▶ Run Demo", variant="secondary")
                 
-                system_msg = gr.HTML("<span style='color: #94a3b8;'>Environment not started.</span>")
+                system_msg = gr.HTML("<span style='color: #8892b0;'>Environment not started.</span>")
                 
                 gr.Markdown("---")
                 
-                gr.HTML("<h3 style='margin-bottom: 10px; margin-top:20px;'>🏆 Reward Score</h3>")
+                gr.HTML("<h3 style='margin-bottom: 10px; margin-top:20px; color: #ccd6f6;'>🏆 Reward Score</h3>")
                 score_display = gr.Number(value=0.01, show_label=False, interactive=False, elem_classes="score-display")
                 
-                gr.HTML("<h3 style='margin-bottom: 10px; margin-top:20px;'>🏥 System Health</h3>")
+                gr.HTML("<h3 style='margin-bottom: 10px; margin-top:20px; color: #ccd6f6;'>🏥 System Health</h3>")
                 health_display = gr.HTML("<span class='health-bad'>🔴 STANDBY</span>")
+
+                gr.Markdown("---")
                 
-        # Middle Panel (Terminal - 50%)
-        with gr.Column(scale=5):
-            gr.HTML("<h3>💻 Web Terminal</h3>")
+                gr.HTML("<h3 style='margin-bottom: 10px; margin-top:20px; color: #ccd6f6;'>📜 Command Log</h3>")
+                history_html = gr.HTML("", elem_classes="history-panel")
+                
+        # Main Panel (Terminal - 70%)
+        with gr.Column(scale=3):
+            gr.HTML("<h3 style='color: #ccd6f6;'>💻 Web Terminal</h3>")
             gr.HTML("""
-            <div style='background:rgba(15,23,42,0.7);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:10px 16px;margin-bottom:10px;font-size:0.88em;color:#94a3b8;'>
-                <b style='color:#a5b4fc;'>💡 Quick Commands:</b>&nbsp;&nbsp;
+            <div style='background:rgba(2, 12, 27, 0.7);border:1px solid rgba(100, 255, 218, 0.25);border-radius:8px;padding:10px 16px;margin-bottom:10px;font-size:0.88em;color:#8892b0;'>
+                <b style='color:#64ffda;'>💡 Quick Commands:</b>&nbsp;&nbsp;
                 <code>ls</code> &nbsp;·&nbsp; <code>ps</code> &nbsp;·&nbsp; <code>cat &lt;file&gt;</code> &nbsp;·&nbsp;
                 <code>kill -9 &lt;pid&gt;</code> &nbsp;·&nbsp; <code>mv &lt;src&gt; &lt;dst&gt;</code> &nbsp;·&nbsp;
                 <code>rm &lt;file&gt;</code> &nbsp;·&nbsp; <code>npm install</code>
@@ -434,7 +441,7 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
             cwd_state = gr.State("")
             
             terminal_out = gr.Textbox(
-                lines=15, 
+                lines=20, 
                 value="[ SYSTEM OFFLINE ]\nPlease initialize a sandbox task from the control panel.", 
                 interactive=False, 
                 show_label=False, 
@@ -452,11 +459,6 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
             
             gr.HTML("<div style='margin-top: 15px;'></div>")
             copilot_btn = gr.Button("🤖 Ask AI Copilot for Hint", elem_classes="analyze-btn")
-            
-        # Right Panel (History - 20%)
-        with gr.Column(scale=2):
-            gr.HTML("<h3>📜 Command Log</h3>")
-            history_html = gr.HTML("", elem_classes="history-panel")
 
     # Event Bindings
     task_dropdown.change(
