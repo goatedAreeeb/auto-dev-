@@ -286,7 +286,7 @@ async def api_reset(task_id: str):
             cwd = data.get("cwd", "/home/user")
             return f"--- Auto-SRE Sandbox Initialized ---\nWelcome to Scenario: {task_id}\nHint: Type shell commands to diagnose and repair.\n\n$ {cwd} > ", cwd, 0.01, "<span class='health-bad'>&#10060; BROKEN</span>", "Sandbox reset."
         except Exception as e:
-            return f"[API ERROR] Failed to reset: {e}", "", 0.0, "<span class='health-bad'>🔴 API ERROR</span>", "Error connecting to backend API."
+            return f"[API ERROR] Failed to reset: {e}", "", 0.01, "<span class='health-bad'>🔴 API ERROR</span>", "Error connecting to backend API."
 
 async def api_step(tool: str, cmd_input: str, current_cwd: str, term_history: str, history_html: str):
     """Call the backend step endpoint and format the terminal output."""
@@ -303,7 +303,7 @@ async def api_step(tool: str, cmd_input: str, current_cwd: str, term_history: st
             if "error" in data and "observation" not in data:
                 term_out = term_history + f"{cmd_input}\n[ERROR: {data['error']}]\n$ {current_cwd} > "
                 h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>[ERROR]</span></div>"
-                return term_out, "", current_cwd, 0.0, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
+                return term_out, "", current_cwd, 0.01, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
             
             obs = data.get("observation", {})
             stdout = obs.get("stdout", "")
@@ -343,7 +343,7 @@ async def api_step(tool: str, cmd_input: str, current_cwd: str, term_history: st
         except Exception as e:
             term_out = term_history + f"{cmd_input}\n[HTTPX ERROR: {e}]\n$ {current_cwd} > "
             h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>[ERROR: {e}]</span></div>"
-            return term_out, "", current_cwd, 0.0, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
+            return term_out, "", current_cwd, 0.01, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
 
 
 _theme = gr.themes.Base(primary_hue="emerald", neutral_hue="emerald")
@@ -389,7 +389,7 @@ with gr.Blocks(head="<style>" + CSS + "</style>", theme=_theme) as demo:
                 
                 gr.Markdown("---")
                 gr.Markdown("### 🏆 Reward Score")
-                score_display = gr.Number(value=0.01, show_label=False, interactive=False, elem_classes="score-display")
+                score_display = gr.Number(value=0.01, precision=3, show_label=False, interactive=False, elem_classes="score-display")
                 
                 gr.Markdown("<br>")
                 gr.Markdown("### 🏥 System Health")
