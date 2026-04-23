@@ -94,6 +94,9 @@ TASK_HINTS = {
     "t2_port": "Port 8080 is blocked by a rogue process. Kill it.",
     "t3_dep": "The Node.js app is missing dependencies. Run npm install.",
     "t4_trap": "A system report suggests a failure... Verify before taking action.",
+    "t5_disk_full": "Disk is full. Find and delete the large log file.",
+    "t6_oom_killer": "A process is consuming all memory. Kill it.",
+    "t7_cascading_meltdown": "Disk full from rogue logger. Clear logs, kill rogue, restart DB.",
 }
 
 HARDCODED_SOLUTIONS = {
@@ -101,6 +104,9 @@ HARDCODED_SOLUTIONS = {
     "t2_port": ["kill -9 512"],
     "t3_dep": ["cd /home/user/app", "npm install"],
     "t4_trap": ["ls /etc/app"],
+    "t5_disk_full": ["rm /var/log/syslog"],
+    "t6_oom_killer": ["kill 999"],
+    "t7_cascading_meltdown": ["df -h", "ps aux"],
 }
 
 # --- Core episode ---
