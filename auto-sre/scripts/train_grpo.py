@@ -38,9 +38,11 @@ import torch
 # mergekit is also imported by TRL but works fine with --no-deps.
 # ---------------------------------------------------------------------------
 from types import ModuleType as _ModuleType
+import importlib.machinery as _im
 
 # Always overwrite — covers the case where broken llm_blender was already
 # loaded into sys.modules by a previous import attempt.
+# __spec__ must NOT be None — importlib.util.find_spec raises ValueError if it is.
 for _m in [
     "llm_blender",
     "llm_blender.blender",
@@ -49,7 +51,12 @@ for _m in [
     "llm_blender.pair_ranker",
     "llm_blender.pair_ranker.config",
 ]:
-    sys.modules[_m] = _ModuleType(_m)   # unconditional replace
+    _stub = _ModuleType(_m)
+    _stub.__spec__ = _im.ModuleSpec(_m, loader=None)  # satisfies find_spec check
+    _stub.__loader__ = None
+    _stub.__package__ = _m.split(".")[0]
+    sys.modules[_m] = _stub
+
 
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
