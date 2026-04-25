@@ -29,17 +29,20 @@ import torch
 
 # ---------------------------------------------------------------------------
 # Self-healing dep guard: TRL 0.24.x imports mergekit + llm_blender at module
-# level. Install both without deps so we don't break unsloth's version pins.
+# level. mergekit: no-deps (its accelerate pin conflicts with unsloth).
+# llm_blender: needs dataclasses_json, install that too.
 # ---------------------------------------------------------------------------
-for _pkg in ("mergekit", "llm_blender"):
+for _pkg, _no_deps in (("mergekit", True), ("dataclasses_json", False), ("llm_blender", False)):
     try:
         __import__(_pkg)
     except ModuleNotFoundError:
-        print(f"[SETUP] {_pkg} missing — installing (no-deps)...")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", _pkg, "--no-deps", "-q"]
-        )
+        print(f"[SETUP] {_pkg} missing — installing...")
+        cmd = [sys.executable, "-m", "pip", "install", _pkg, "-q"]
+        if _no_deps:
+            cmd.append("--no-deps")
+        subprocess.check_call(cmd)
         print(f"[SETUP] {_pkg} installed ✓")
+
 
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
