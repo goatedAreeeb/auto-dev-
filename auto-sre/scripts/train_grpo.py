@@ -65,6 +65,9 @@ for _m in [
     "vllm.distributed",
     "vllm.distributed.device_communicators",
     "vllm.distributed.device_communicators.pynccl",
+    "vllm.sampling_params",
+    "vllm.outputs",
+    "vllm.lora.request",
 ]:
     _stub = _ModuleType(_m)
     _stub.__spec__ = _im.ModuleSpec(_m, loader=None)  # satisfies find_spec check
@@ -72,6 +75,26 @@ for _m in [
     _stub.__package__ = _m.split(".")[0]
     sys.modules[_m] = _stub
 
+# Inject _Dummy onto vllm stubs so `from vllm.x.y import SomeClass` succeeds.
+# Empty stubs satisfy ModuleNotFoundError but not ImportError (missing attribute).
+# use_vllm=False means none of these are ever called at runtime.
+class _Dummy:
+    """No-op placeholder for vllm symbols imported at module level by TRL."""
+    def __init__(self, *a, **kw): pass
+    def __call__(self, *a, **kw): return self
+    def __class_getitem__(cls, item): return cls
+
+# vllm.distributed.device_communicators.pynccl
+_pynccl = sys.modules["vllm.distributed.device_communicators.pynccl"]
+_pynccl.PyNcclCommunicator = _Dummy
+
+# top-level vllm symbols TRL's vllm_client.py imports
+_vllm = sys.modules["vllm"]
+for _attr in (
+    "LLM", "SamplingParams", "RequestOutput", "CompletionOutput",
+    "PoolingParams", "EmbeddingRequestOutput",
+):
+    setattr(_vllm, _attr, _Dummy)
 
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
