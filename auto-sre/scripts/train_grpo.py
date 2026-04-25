@@ -58,6 +58,13 @@ for _m in [
     # liger_kernel — optional TRL/unsloth import
     "liger_kernel",
     "liger_kernel.transformers",
+    # vllm — TRL grpo_trainer.py imports vllm_client at module level when use_vllm=True
+    # vllm is NOT available in Colab free tier; use_vllm=False below avoids runtime use
+    # but the module-level import still fires — stub it out
+    "vllm",
+    "vllm.distributed",
+    "vllm.distributed.device_communicators",
+    "vllm.distributed.device_communicators.pynccl",
 ]:
     _stub = _ModuleType(_m)
     _stub.__spec__ = _im.ModuleSpec(_m, loader=None)  # satisfies find_spec check
@@ -258,7 +265,7 @@ def main():
         model_name=MODEL_NAME,
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=True,
-        fast_inference=True,
+        fast_inference=False,  # vllm not available in Colab free tier
         max_lora_rank=LORA_RANK,
         gpu_memory_utilization=0.6,
     )
@@ -292,7 +299,7 @@ def main():
     dataset = Dataset.from_dict({"prompt": prompts})
 
     training_args = GRPOConfig(
-        use_vllm=True,
+        use_vllm=False,  # vllm not installed in Colab free tier; use HF generation
         learning_rate=5e-6,
         adam_beta1=0.9,
         adam_beta2=0.99,
