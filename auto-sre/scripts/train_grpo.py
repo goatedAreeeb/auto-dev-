@@ -40,10 +40,39 @@ import torch
 from types import ModuleType as _ModuleType
 import importlib.machinery as _im
 
-# Always overwrite — covers the case where broken llm_blender was already
-# loaded into sys.modules by a previous import attempt.
-# __spec__ must NOT be None — importlib.util.find_spec raises ValueError if it is.
-for _m in [
+
+class _Dummy:
+    """No-op placeholder for any optional-dep symbol imported at module level.
+
+    Supports instantiation, calling, attribute access, and generic subscript
+    so it silently satisfies whatever TRL does with vllm symbols at import time.
+    use_vllm=False ensures none of these are ever invoked at runtime.
+    """
+    def __init__(self, *a, **kw): pass
+    def __call__(self, *a, **kw): return _Dummy()
+    def __getattr__(self, name): return _Dummy()
+    def __class_getitem__(cls, item): return cls
+
+
+def _make_stub(name: str) -> _ModuleType:
+    """Return a stub that Python treats as a *package* (not just a module).
+
+    The critical fix: setting __path__ = [] tells the import system this is a
+    package, so `from name.sub.mod import X` no longer raises
+    "name.sub is not a package".  Without __path__ that error fires even when
+    the dotted name is already in sys.modules.
+    """
+    stub = _ModuleType(name)
+    stub.__spec__ = _im.ModuleSpec(name, loader=None, is_package=True)
+    stub.__loader__ = None
+    stub.__package__ = name
+    stub.__path__ = []   # marks as package; child sub-imports now resolve
+    stub.__file__ = None
+    return stub
+
+
+# Register every dotted path TRL's import chain touches — parent before child.
+_STUB_MODULES = [
     # llm_blender — broken with transformers>=4.38 (TRANSFORMERS_CACHE removed)
     "llm_blender",
     "llm_blender.blender",
@@ -58,43 +87,42 @@ for _m in [
     # liger_kernel — optional TRL/unsloth import
     "liger_kernel",
     "liger_kernel.transformers",
-    # vllm — TRL grpo_trainer.py imports vllm_client at module level when use_vllm=True
-    # vllm is NOT available in Colab free tier; use_vllm=False below avoids runtime use
-    # but the module-level import still fires — stub it out
+    # vllm — vllm_client.py is imported unconditionally at module level by TRL;
+    # use_vllm=False prevents runtime use but not the module-level import chain.
     "vllm",
     "vllm.distributed",
+    "vllm.distributed.utils",                        # StatelessProcessGroup
     "vllm.distributed.device_communicators",
-    "vllm.distributed.device_communicators.pynccl",
+    "vllm.distributed.device_communicators.pynccl",  # PyNcclCommunicator
     "vllm.sampling_params",
     "vllm.outputs",
+    "vllm.lora",
     "vllm.lora.request",
-]:
-    _stub = _ModuleType(_m)
-    _stub.__spec__ = _im.ModuleSpec(_m, loader=None)  # satisfies find_spec check
-    _stub.__loader__ = None
-    _stub.__package__ = _m.split(".")[0]
-    sys.modules[_m] = _stub
+]
+for _m in _STUB_MODULES:
+    sys.modules[_m] = _make_stub(_m)   # always overwrite stale/broken entries
 
-# Inject _Dummy onto vllm stubs so `from vllm.x.y import SomeClass` succeeds.
-# Empty stubs satisfy ModuleNotFoundError but not ImportError (missing attribute).
-# use_vllm=False means none of these are ever called at runtime.
-class _Dummy:
-    """No-op placeholder for vllm symbols imported at module level by TRL."""
-    def __init__(self, *a, **kw): pass
-    def __call__(self, *a, **kw): return self
-    def __class_getitem__(cls, item): return cls
+# Inject named symbols pulled via `from X import Y`
+# Package stubs satisfy `import X.Y` but `from X.Y import Z` still raises
+# ImportError when Z is absent — populate every name vllm_client.py uses.
 
-# vllm.distributed.device_communicators.pynccl
-_pynccl = sys.modules["vllm.distributed.device_communicators.pynccl"]
-_pynccl.PyNcclCommunicator = _Dummy
+_vllm       = sys.modules["vllm"]
+_dist_utils = sys.modules["vllm.distributed.utils"]
+_pynccl     = sys.modules["vllm.distributed.device_communicators.pynccl"]
+_sampling   = sys.modules["vllm.sampling_params"]
+_outputs    = sys.modules["vllm.outputs"]
+_lora_req   = sys.modules["vllm.lora.request"]
 
-# top-level vllm symbols TRL's vllm_client.py imports
-_vllm = sys.modules["vllm"]
-for _attr in (
-    "LLM", "SamplingParams", "RequestOutput", "CompletionOutput",
-    "PoolingParams", "EmbeddingRequestOutput",
-):
+for _attr in ("LLM", "SamplingParams", "RequestOutput", "CompletionOutput",
+              "PoolingParams", "EmbeddingRequestOutput"):
     setattr(_vllm, _attr, _Dummy)
+
+_dist_utils.StatelessProcessGroup = _Dummy   # vllm_client.py line 35
+_pynccl.PyNcclCommunicator        = _Dummy   # vllm_client.py line 34
+_sampling.SamplingParams          = _Dummy
+_outputs.RequestOutput            = _Dummy
+_outputs.CompletionOutput         = _Dummy
+_lora_req.LoRARequest             = _Dummy
 
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
@@ -135,7 +163,6 @@ TASK_MAX_STEPS: dict[str, int] = {
     "t10_config_secret_failure": 15,
 }
 
-# Reward + loss history for plots
 reward_history: list[float] = []
 per_task_rewards: dict[str, list[float]] = {}
 
@@ -204,23 +231,16 @@ TASK_DESCRIPTIONS: dict[str, str] = {
 
 
 def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
-    """GRPO reward function — round-robin across all tasks.
-
-    BUG-03: reads reward from each /step response.
-    BUG-02: passes task_id to /grader for session validation.
-    BUG-15: respects per-task max_steps.
-    BUG-16: only increments episode counter on success.
-    """
+    """GRPO reward function — round-robin across all tasks."""
     rewards = []
     for completion in completions:
         task_id = TASKS[_episode[0] % len(TASKS)]
         success = False
         try:
             output = completion[0]["content"] if isinstance(completion, list) else completion
-            max_steps = TASK_MAX_STEPS.get(task_id, 10)  # BUG-15
+            max_steps = TASK_MAX_STEPS.get(task_id, 10)
             commands = [c.strip() for c in output.split("\n") if c.strip()][:max_steps]
 
-            # BUG-01: timeout=120
             resp = requests.post(
                 f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=120
             )
@@ -236,17 +256,16 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
                     step_resp = requests.post(
                         f"{ENV_URL}/step",
                         json={"tool": "run_command", "arguments": cmd},
-                        timeout=120,  # BUG-01
+                        timeout=120,
                     )
                     if step_resp.status_code == 200:
                         data = step_resp.json()
-                        step_reward = data.get("reward", step_reward)  # BUG-03
+                        step_reward = data.get("reward", step_reward)
                         if data.get("done", False):
                             break
                 except Exception:
                     break
 
-            # BUG-02: pass task_id so grader validates session
             try:
                 grade_resp = requests.get(
                     f"{ENV_URL}/grader?task_id={task_id}", timeout=120
@@ -266,14 +285,12 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
             print(f"[REWARD] Exception for {task_id}: {e}")
             rewards.append(0.01)
 
-        # BUG-16: only advance round-robin on success
         if success:
             _episode[0] += 1
 
     avg = sum(rewards) / max(len(rewards), 1)
     reward_history.append(avg)
-    step_num = len(reward_history)
-    print(f"[REWARD LOG] Avg: {avg:.4f} | Step {step_num} | Task: {TASKS[_episode[0] % len(TASKS)]}")
+    print(f"[REWARD LOG] Avg: {avg:.4f} | Step {len(reward_history)} | Task: {TASKS[_episode[0] % len(TASKS)]}")
     return rewards
 
 
@@ -308,7 +325,6 @@ def main():
         "by issuing CLI commands. Output one command per line. No explanations."
     )
 
-    # BUG-14: exactly 10 prompts, no padding loop
     prompts = [
         [
             {"role": "system", "content": system_prompt},
@@ -322,7 +338,7 @@ def main():
     dataset = Dataset.from_dict({"prompt": prompts})
 
     training_args = GRPOConfig(
-        use_vllm=False,  # vllm not installed in Colab free tier; use HF generation
+        use_vllm=False,  # vllm not installed in Colab free tier
         learning_rate=5e-6,
         adam_beta1=0.9,
         adam_beta2=0.99,
@@ -359,13 +375,11 @@ def main():
     model.save_lora("grpo_auto_sre_lora")
     print("Training complete!")
 
-    # Per-task summary
     print("\n[RESULTS] Per-task average rewards:")
     for tid, scores in per_task_rewards.items():
         avg = sum(scores) / len(scores) if scores else 0.0
         print(f"  {tid}: {avg:.4f} ({len(scores)} episodes)")
 
-    # Generate plots
     os.makedirs("plots", exist_ok=True)
     try:
         import matplotlib.pyplot as plt
