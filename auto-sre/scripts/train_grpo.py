@@ -44,12 +44,20 @@ import importlib.machinery as _im
 # loaded into sys.modules by a previous import attempt.
 # __spec__ must NOT be None — importlib.util.find_spec raises ValueError if it is.
 for _m in [
+    # llm_blender — broken with transformers>=4.38 (TRANSFORMERS_CACHE removed)
     "llm_blender",
     "llm_blender.blender",
     "llm_blender.blender.blender",
     "llm_blender.blender.blender_utils",
     "llm_blender.pair_ranker",
     "llm_blender.pair_ranker.config",
+    # weave — TRL callbacks.py optional import
+    "weave",
+    "weave.flow",
+    "weave.flow.calls_export",
+    # liger_kernel — optional TRL/unsloth import
+    "liger_kernel",
+    "liger_kernel.transformers",
 ]:
     _stub = _ModuleType(_m)
     _stub.__spec__ = _im.ModuleSpec(_m, loader=None)  # satisfies find_spec check
