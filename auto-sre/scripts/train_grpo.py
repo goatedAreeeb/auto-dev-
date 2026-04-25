@@ -160,10 +160,10 @@ def main():
         ])
 
     # Expand to at least 32 examples for training stability
-    while len(prompts) < 32:
-        prompts.extend(prompts[:max(1, 32 - len(prompts))])
+    while len(prompts) < 128:
+        prompts.extend(prompts[:max(1, 128 - len(prompts))])
 
-    dataset = Dataset.from_dict({"prompt": prompts[:32]})
+    dataset = Dataset.from_dict({"prompt": prompts[:128]})
 
     training_args = GRPOConfig(
         use_vllm=False,
@@ -182,7 +182,7 @@ def main():
         num_generations=8,
         max_prompt_length=256,
         max_completion_length=256,
-        num_train_epochs=4,
+        num_train_epochs=3,
         save_steps=100,
         max_grad_norm=0.1,
         output_dir="outputs",
