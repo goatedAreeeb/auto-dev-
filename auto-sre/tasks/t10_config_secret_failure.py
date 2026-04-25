@@ -49,7 +49,8 @@ def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
         "config_valid": False,
         "target_log": "/var/log/app.log",
         "secret_file": "/etc/app/secrets.conf",
-        "target_port": 8080,   # app uses 8080, nginx uses 80 — no clash
+        "correct_secret_key": "DB_PASSWORD",
+        "target_port": 8080,
     })
     return fs, pm
 

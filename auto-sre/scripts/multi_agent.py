@@ -183,8 +183,13 @@ class Executor:
                 app_explicitly_up = svcs.get("app") is True
                 secret_broken = (app_explicitly_up and current_reward < 0.5) or state.get("secret_valid") is False
                 if secret_broken:
-                    sec = 'echo DB_PASSWORD=supersecret > /etc/app/secrets.conf'
+                    # State-driven: use secret_file + correct_secret_key if provided
+                    # Falls back to overwriting with a valid placeholder (no hardcoded secret value)
+                    sec_file = state.get("secret_file", "/etc/app/secrets.conf")
+                    sec_key = state.get("correct_secret_key", "DB_PASSWORD")
+                    sec = f'echo {sec_key}=valid > {sec_file}'
                     if sec not in executed and sec not in queue: queue.appendleft(sec)
+
 
                 # ── P3: Install dependencies ──
                 # Trigger: deps key absent/None/False AND restart already tried but reward still 0.01
