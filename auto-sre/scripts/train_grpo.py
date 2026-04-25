@@ -8,12 +8,27 @@ Usage:
 """
 
 import os
+import sys
 import requests
 import torch
+
+# ---------------------------------------------------------------------------
+# Dependency guard: new TRL versions require `mergekit` at import time.
+# Install it automatically if missing so the script self-heals in Colab.
+# ---------------------------------------------------------------------------
+try:
+    import mergekit  # noqa: F401
+except ModuleNotFoundError:
+    import subprocess
+    print("[SETUP] mergekit not found — installing automatically...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "mergekit", "-q"])
+    print("[SETUP] mergekit installed ✓")
+
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
 from unsloth import FastLanguageModel, PatchFastRL
 PatchFastRL("GRPO", FastLanguageModel)
+
 
 # --- Reward History (for plotting) ---
 reward_history: list[float] = []
