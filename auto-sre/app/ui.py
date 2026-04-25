@@ -206,7 +206,7 @@ import requests
 def safe_post(path, body):
     print(f"[DEBUG] Calling -> {ENV_URL}{path}")
     try:
-        resp = requests.post(f"{ENV_URL}{path}", json=body, timeout=10)
+        resp = requests.post(f"{ENV_URL}{path}", json=body, timeout=60)
         return resp.json()
     except Exception as e:
         return {
@@ -218,7 +218,7 @@ def safe_post(path, body):
 def safe_get(path):
     print(f"[DEBUG] Calling -> {ENV_URL}{path}")
     try:
-        resp = requests.get(f"{ENV_URL}{path}", timeout=10)
+        resp = requests.get(f"{ENV_URL}{path}", timeout=60)
         return resp.json()
     except Exception as e:
         return {
