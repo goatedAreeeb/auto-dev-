@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from engine.filesystem import MockFilesystem
 from engine.process_manager import ProcessManager
@@ -23,7 +23,8 @@ class TaskDefinition:
     task_id: str
     description: str
     max_steps: int
-    build_initial_state: Callable[[], tuple[MockFilesystem, ProcessManager]]
+    # BUG-13 FIX: 3-tuple (MockFilesystem, ProcessManager, dict[state_hint])
+    build_initial_state: Callable[[], tuple[MockFilesystem, ProcessManager, dict[str, Any]]]
     grader: BaseGrader
 
 

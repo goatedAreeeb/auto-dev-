@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Query
 from app.routes._session import get_session
 
 router = APIRouter()
@@ -23,11 +24,15 @@ def _safe_reward(raw) -> float:
 
 
 @router.get("/grader", tags=["Environment"])
-async def get_grader_score() -> dict:
-    """Return the current grader score for the active episode without advancing the episode."""
+async def get_grader_score(task_id: Optional[str] = Query(default=None)) -> dict:
+    """Return the current grader score for the active episode.
+
+    BUG-02 FIX: accepts optional task_id query param.
+    If provided, validates it matches the session's loaded task before grading.
+    Prevents cross-task reward contamination in training loops.
+    """
     session = get_session()
 
-    # Safe fallback instead of HTTP error (validator-friendly)
     if session.task_def is None:
         return {
             "task_id": None,
@@ -39,15 +44,26 @@ async def get_grader_score() -> dict:
             "max_steps": 0,
         }
 
-    # Run grader
+    # BUG-02 FIX: validate task_id matches if provided
+    if task_id is not None and task_id != session.task_def.task_id:
+        return {
+            "task_id": task_id,
+            "reward": 0.0,
+            "score": 0.0,
+            "done": False,
+            "error": "task_id mismatch",
+            "grader_message": (
+                f"Requested task_id='{task_id}' but session has '{session.task_def.task_id}' loaded. "
+                "Call /reset with the correct task_id first."
+            ),
+        }
+
     reward, done, grader_message = session.task_def.grader.grade(
         session.sandbox.fs,
         session.sandbox.pm,
         session.sandbox.command_history,
         session.sandbox.state,
     )
-
-    # HARD CLAMP (global guarantee)
     reward = _safe_reward(reward)
 
     return {
@@ -118,4 +134,3 @@ async def grade_any_task(task_id: str) -> dict:
         reward = _safe_reward(reward)
         return {"score": reward, "reward": reward}
     except Exception: return {"score": _SCORE_MIN, "reward": _SCORE_MIN}
-

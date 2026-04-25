@@ -15,34 +15,25 @@ MAX_STEPS = 10
 
 GRADER = DiskGrader()
 
-def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
+
+def build_initial_state() -> tuple:
     """Construct the initial mock state."""
     fs = MockFilesystem()
     pm = ProcessManager()
 
-    # Read-only base
-    base_files = {
-        "/bin/bash": MockFile("/bin/bash", "binary", "rwxr-xr-x"),
-        "/usr/bin/ls": MockFile("/usr/bin/ls", "binary", "rwxr-xr-x"),
-    }
-    fs.set_base(base_files)
-
     target_log = "/var/log/syslog"
 
-    # Writable overlay
-    overlay_files = {
+    fs.set_base({
+        "/bin/bash": MockFile("/bin/bash", "binary", "rwxr-xr-x"),
+        "/usr/bin/ls": MockFile("/usr/bin/ls", "binary", "rwxr-xr-x"),
+    })
+    fs.set_overlay({
         "/home/user/.bashrc": MockFile("/home/user/.bashrc", "alias ll='ls -l'"),
-        target_log: MockFile(target_log, "LARGE_LOG_CONTENT" * 1000000),  # Massive file
+        target_log: MockFile(target_log, "LARGE_LOG_CONTENT" * 1000000),
+    })
+
+    state_hint = {
+        "disk_usage": 100,   # only this task sets 100 (BUG-08 fix)
+        "target_log": target_log,
     }
-    fs.set_overlay(overlay_files)
-
-    global _state_hint
-    _state_hint = {
-        "disk_usage": 100,
-        "target_log": target_log
-    }
-
-    return fs, pm
-
-_state_hint: dict = {}
-
+    return fs, pm, state_hint

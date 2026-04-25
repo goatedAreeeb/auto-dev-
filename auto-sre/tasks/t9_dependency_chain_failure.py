@@ -19,17 +19,13 @@ DESCRIPTION = (
 )
 MAX_STEPS = 18
 
-_state_hint: dict = {}
 
-
-def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
+def build_initial_state() -> tuple:
     fs = MockFilesystem()
     fs.set_base({
         "/etc/hostname": MockFile("/etc/hostname", "auto-sre-host"),
-        "/etc/app/service.conf": MockFile("/etc/app/service.conf",
-            "depends_on=cache\n"),
-        "/etc/cache/service.conf": MockFile("/etc/cache/service.conf",
-            "depends_on=db\n"),
+        "/etc/app/service.conf": MockFile("/etc/app/service.conf", "depends_on=cache\n"),
+        "/etc/cache/service.conf": MockFile("/etc/cache/service.conf", "depends_on=db\n"),
     })
     fs.set_overlay({
         "/var/log/app.log": MockFile("/var/log/app.log",
@@ -47,15 +43,15 @@ def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
         MockProcess(pid=1, command="init", port_bindings=[]),
         MockProcess(pid=100, command="nginx", port_bindings=[80]),
     ])
-    _state_hint.update({
+    state_hint = {
         "disk_usage": 20,
         "memory_usage": 30,
         "services_running": {"db": False, "cache": False, "app": False, "nginx": True},
         "target_log": "/var/log/app.log",
         "target_port": 3000,
         "dep_chain_order": ["db", "cache", "app"],
-    })
-    return fs, pm
+    }
+    return fs, pm, state_hint
 
 
 GRADER = DepChainGrader()

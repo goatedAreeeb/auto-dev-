@@ -67,6 +67,11 @@ class ProcessManager:
             return True
         return False
 
+    def remove(self, pid: int) -> None:
+        """Remove a process entry entirely from the table (call after kill)."""
+        self._processes.pop(pid, None)
+
+
     def spawn(self, command: str, port_bindings: list[int] | None = None) -> MockProcess:
         """Spawn a new mock process."""
         proc = MockProcess(

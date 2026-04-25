@@ -52,8 +52,10 @@ class Sandbox:
         self.command_history: list[str] = []
 
         # ── World Model State (Phase 2) ──────────────────────────────
+        # BUG-08 FIX: disk_usage defaults to 20 (not 100).
+        # Only tasks that define disk_usage=100 in their state_hint will start full.
         self.state: dict[str, Any] = {
-            "disk_usage": 100,          # % — starts at 100 for disk tasks
+            "disk_usage": 20,           # % — default healthy (BUG-08)
             "memory_usage": 20,         # %
             "ports": {},                # {port_str: pid}
             "services_running": {},     # {service_name: bool}
@@ -68,7 +70,14 @@ class Sandbox:
 
     @with_timeout(STEP_TIMEOUT_SECONDS)
     def execute(self, raw_command: str) -> CommandResult:
-        """Validate and execute a shell command, returning stdout/stderr."""
+        """Validate and execute a shell command, returning stdout/stderr.
+
+        Note on echo redirect: _cmd_echo returns its text as stdout.
+        execute() intercepts '>' and '>>' tokens and writes that stdout
+        to the filesystem. Example: 'echo foo > /etc/app/conf' writes 'foo'
+        to /etc/app/conf. This is intentional and must be preserved if
+        execute() is ever refactored (BUG-17 documentation).
+        """
         validated = validate_command(raw_command)
         self.command_history.append(validated)
 
@@ -121,14 +130,12 @@ class Sandbox:
     def _cmd_ls(self, args: list[str]) -> CommandResult:
         import os
 
-        # Separate flags from paths
         paths = [a for a in args if not a.startswith("-")]
         target = paths[0] if paths else self.cwd
         target = self._resolve(target)
 
         try:
             all_paths = self.fs.get_all_paths()
-
             prefix = target.rstrip("/") + "/"
             children = set()
             for p in all_paths:
@@ -141,7 +148,6 @@ class Sandbox:
                 return CommandResult(stdout="total 0")
 
             return CommandResult(stdout="\n".join(sorted(children)))
-
         except Exception as e:
             return CommandResult(stderr=str(e), success=False)
 
@@ -181,22 +187,41 @@ class Sandbox:
         src, dst = self._resolve(args[0]), self._resolve(args[1])
         try:
             self.fs.rename(src, dst)
-            # State update: if renamed to /etc/app/conf, mark config valid
             if dst == "/etc/app/conf":
                 self.state["config_valid"] = True
             return CommandResult(stdout=f"mv: moved '{src}' to '{dst}'")
         except FileNotFoundError as e:
             return CommandResult(stderr=str(e), success=False)
 
+    def _cmd_cp(self, args: list[str]) -> CommandResult:
+        """Copy a file within the virtual filesystem (BUG-18 fix).
+
+        Usage: cp <src> <dst>
+        Returns empty stdout on success (same as real cp).
+        """
+        if len(args) < 2:
+            return CommandResult(stderr="cp: missing operand", success=False)
+        src, dst = self._resolve(args[0]), self._resolve(args[1])
+        try:
+            content = self.fs.read(src)
+        except FileNotFoundError:
+            return CommandResult(stderr=f"cp: {src}: No such file or directory", success=False)
+        try:
+            self.fs.write(dst, content)
+            # If copying to config path, mark config valid
+            if dst == "/etc/app/conf":
+                self.state["config_valid"] = True
+            return CommandResult(stdout="")
+        except Exception as e:
+            return CommandResult(stderr=f"cp: cannot create '{dst}': {e}", success=False)
+
     def _cmd_rm(self, args: list[str]) -> CommandResult:
-        # Strip flags like -rf
         paths = [a for a in args if not a.startswith("-")]
         if not paths:
             return CommandResult(stderr="rm: missing operand", success=False)
         for p in paths:
             resolved = self._resolve(p)
             try:
-                # State update: if removing a log file, free disk space
                 if resolved == self.state.get("target_log", "/var/log/syslog"):
                     self.state["disk_usage"] = max(5, self.state.get("disk_usage", 100) - 85)
                 self.fs.delete(resolved)
@@ -232,17 +257,24 @@ class Sandbox:
                 return CommandResult(stderr=f"kill: invalid PID '{a}'", success=False)
         if not pids:
             return CommandResult(stderr="kill: missing PID", success=False)
+
         for pid in pids:
+            # Read port bindings BEFORE killing (BUG-10 fix: don't read dead object)
+            proc = self.pm.get_by_pid(pid)
+            ports_to_free = list(proc.port_bindings) if proc else []
+
             if not self.pm.kill(pid):
                 return CommandResult(stderr=f"kill: process {pid} not found", success=False)
-            # State update: if rogue PID killed, reduce memory usage
+
+            # BUG-10 FIX: remove from process table immediately after kill
+            self.pm.remove(pid)
+
+            # Update state using pre-captured port list
             if pid == self.state.get("rogue_pid"):
                 self.state["memory_usage"] = max(5, self.state.get("memory_usage", 99) - 75)
-            # State update: remove port bindings from state
-            proc = self.pm.get_by_pid(pid)
-            if proc:
-                for port in proc.port_bindings:
-                    self.state["ports"].pop(str(port), None)
+            for port in ports_to_free:
+                self.state["ports"].pop(str(port), None)
+
         return CommandResult(stdout="kill: signal sent")
 
     def _cmd_systemctl(self, args: list[str]) -> CommandResult:
@@ -252,40 +284,39 @@ class Sandbox:
         service = args[1] if len(args) > 1 else "unknown"
 
         if action == "status":
-            # Check state for service health
             running = self.state["services_running"].get(service, True)
             status = "active (running)" if running else "failed"
             return CommandResult(stdout=f"● {service}.service - {status}")
 
         if action in ("start", "restart"):
-            # If disk is full, DB cannot start
             if service == "db":
                 if self.state.get("disk_usage", 0) >= 100:
                     self.state["services_running"][service] = False
                     return CommandResult(stderr=f"Job for {service}.service failed because the disk is full.", success=False)
-                
                 rogue_pid = self.state.get("rogue_pid")
                 if rogue_pid:
                     proc = self.pm.get_by_pid(rogue_pid)
                     if proc and proc.is_alive:
                         self.state["services_running"][service] = False
                         return CommandResult(stderr=f"Job for {service}.service failed because rogue process is still active.", success=False)
-            
+
             if service in ("app", "app.service"):
                 if "config_valid" in self.state and not self.state["config_valid"]:
                     self.state["services_running"][service] = False
                     return CommandResult(stderr=f"Job for {service}.service failed because config is missing or invalid.", success=False)
-                
                 if "dependencies_installed" in self.state and not self.state["dependencies_installed"]:
                     self.state["services_running"][service] = False
                     return CommandResult(stderr=f"Job for {service}.service failed. Missing dependency: dotenv", success=False)
-                
+
                 target_port = self.state.get("target_port", 8080)
                 if not self.pm.is_port_free(target_port):
+                    # BUG-11 FIX: informative error so agent can react
                     self.state["services_running"][service] = False
-                    return CommandResult(stderr=f"Job for {service}.service failed. Address already in use (port {target_port}).", success=False)
-            
-            # State update: mark service as running
+                    return CommandResult(
+                        stderr=f"Error: port {target_port} already in use. Kill the process holding it first.",
+                        success=False,
+                    )
+
             self.state["services_running"][service] = True
             if service in ("app", "app.service"):
                 return CommandResult(stdout=f"{service} started successfully.")
@@ -443,6 +474,7 @@ Sandbox._HANDLERS = {
     "pwd": Sandbox._cmd_pwd,
     "cd": Sandbox._cmd_cd,
     "mv": Sandbox._cmd_mv,
+    "cp": Sandbox._cmd_cp,       # BUG-18 fix: cp handler added
     "rm": Sandbox._cmd_rm,
     "touch": Sandbox._cmd_touch,
     "mkdir": Sandbox._cmd_mkdir,

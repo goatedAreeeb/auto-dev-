@@ -4,7 +4,7 @@
   1. systemctl status app -> detect failure
   2. cat /var/log/app.log -> find "invalid secret" error
   3. cat /etc/app/secrets.conf -> inspect bad value
-  4. echo CORRECT_SECRET > /etc/app/secrets.conf -> fix secret
+  4. echo "APP_SECRET=correctvalue123" > /etc/app/secrets.conf -> fix secret
   5. systemctl restart app -> verify recovery
 """
 from __future__ import annotations
@@ -14,15 +14,15 @@ from grader.health_check import SecretGrader
 
 TASK_ID = "t10_config_secret_failure"
 DESCRIPTION = (
-    "Application is down -> authentication failure..."
-    "A config secret is invalid. Inspect logs, find the bad secret, update it, and restart the app."
+    "Application is down -> authentication failure. "
+    "A config secret is invalid. Inspect /var/log/app.log, find the bad secret in "
+    "/etc/app/secrets.conf (contains WRONG_SECRET_XYZ), overwrite it with a valid value "
+    "using: echo 'APP_SECRET=correctvalue123' > /etc/app/secrets.conf, then restart the app."
 )
 MAX_STEPS = 15
 
-_state_hint: dict = {}
 
-
-def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
+def build_initial_state() -> tuple:
     fs = MockFilesystem()
     fs.set_base({
         "/etc/hostname": MockFile("/etc/hostname", "auto-sre-host"),
@@ -42,17 +42,17 @@ def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
         MockProcess(pid=1, command="init", port_bindings=[]),
         MockProcess(pid=200, command="nginx", port_bindings=[80]),
     ])
-    _state_hint.update({
+    state_hint = {
         "disk_usage": 20,
         "memory_usage": 20,
         "services_running": {"app": False, "nginx": True},
         "config_valid": False,
         "target_log": "/var/log/app.log",
         "secret_file": "/etc/app/secrets.conf",
-        "correct_secret_key": "DB_PASSWORD",
+        "correct_secret_key": "APP_SECRET",
         "target_port": 8080,
-    })
-    return fs, pm
+    }
+    return fs, pm, state_hint
 
 
 GRADER = SecretGrader()

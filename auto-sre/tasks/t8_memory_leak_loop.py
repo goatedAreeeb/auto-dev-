@@ -2,12 +2,11 @@
 
 4-step remediation:
   1. free/top -> detect memory exhaustion
-  2. ps aux -> identify leaking process + crash loop (leak-daemon)
-  3. kill <PID> -> stop crash loop
+  2. ps aux -> identify leaking process (PID 7777) + crash loop (leak-daemon)
+  3. kill 7777 -> stop crash loop
   4. systemctl restart leak-daemon -> restore stable service
 """
 from __future__ import annotations
-import random
 from engine.filesystem import MockFile, MockFilesystem
 from engine.process_manager import MockProcess, ProcessManager
 from grader.health_check import MemLeakGrader
@@ -15,15 +14,19 @@ from grader.health_check import MemLeakGrader
 TASK_ID = "t8_memory_leak_loop"
 DESCRIPTION = (
     "ALERT: Service 'leak-daemon' is in a crash-restart loop consuming all memory. "
-    "Memory at 97%. Diagnose, kill the leaking process, and restore the service."
+    "Memory at 97%. Run 'ps aux' to find the leaking process (PID 7777), "
+    "kill it, then run 'systemctl restart leak-daemon' to restore the service."
 )
 MAX_STEPS = 15
+
+# Deterministic PID — BUG-06 fix
+ROGUE_PID = 7777
 
 _state_hint: dict = {}
 
 
-def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
-    rogue_pid = random.randint(400, 9990)
+def build_initial_state() -> tuple:
+    rogue_pid = ROGUE_PID
     fs = MockFilesystem()
     fs.set_base({
         "/etc/hostname": MockFile("/etc/hostname", "auto-sre-host"),
@@ -45,15 +48,15 @@ def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
         MockProcess(pid=200, command="nginx", port_bindings=[80]),
         MockProcess(pid=rogue_pid, command="leak-daemon --no-limit", port_bindings=[]),
     ])
-    _state_hint.update({
+    state_hint = {
         "disk_usage": 30,
         "memory_usage": 97,
         "services_running": {"nginx": True, "leak-daemon": False},
         "rogue_pid": rogue_pid,
         "target_log": "/var/log/leak-daemon.log",
         "target_port": 80,
-    })
-    return fs, pm
+    }
+    return fs, pm, state_hint
 
 
 GRADER = MemLeakGrader()

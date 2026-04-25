@@ -15,11 +15,23 @@ pinned: false
 
 > *"The server is down. You have 15 steps. Go."*
 
+## 🎯 Problem Motivation
+
+Modern infrastructure failures cost companies millions per hour of downtime, yet on-call SRE engineers are woken at 3 AM to manually SSH in, run `ps aux`, read logs, and apply fixes they've seen a hundred times before. These workflows are repetitive, high-stakes, and perfectly structured for automation — yet no open benchmark existed to train and evaluate AI agents on realistic, multi-step Linux repair tasks. **Auto-SRE** fills that gap: a fully sandboxed, reward-instrumented SRE environment where language models learn to diagnose cascading failures, kill rogue processes, fix broken configs, and restore services, using the same shell commands a human engineer would use — without any human in the loop.
+
 **Auto-SRE** is an [OpenEnv](https://huggingface.co/openenv)-compliant environment where AI agents learn to diagnose and repair broken Linux infrastructure — just like an on-call Site Reliability Engineer.
 
 Unlike toy benchmarks, agents must execute real shell commands inside a sandboxed system, read actual error signals, and apply the correct fix — **in the correct order**. Wrong guesses don't score. Half-correct attempts earn partial credit. Systematic diagnosis earns full marks.
 
-🌐 **Live Demo:** [Try it on Hugging Face Spaces](https://huggingface.co/spaces/goated1/auto-sre)
+🌐 **Live Demo:** [Try it on Hugging Face Spaces](https://huggingface.co/spaces/goated1/auto-sre)  
+📓 **Training Notebook:** [Colab Notebook](https://colab.research.google.com/drive/1auto-sre-grpo)  
+📄 **Writeup:** [OpenEnv India 2026 Submission](https://huggingface.co/spaces/goated1/auto-sre)
+
+---
+
+## 🤖 What the Agent Sees, Does, and Gets Rewarded For
+
+At each step of an episode the agent receives an **observation** (stdout + stderr from its last command, current working directory, and a `health_status` boolean). From this observation the agent issues a single shell command chosen from a whitelisted set (`ls`, `cat`, `ps`, `kill`, `mv`, `rm`, `systemctl`, `echo`, `find`, `df`, `free`, `top`, and more). The environment executes the command against a stateful mock Linux sandbox, mutates world-model variables (`disk_usage`, `memory_usage`, `services_running`, `rogue_pid`), and returns an **intermediate reward** reflecting how much closer the system is to a healthy state — earned only through real state changes, never by matching command strings. A final **terminal reward** from the grader summarises full episode success, clamped strictly to (0.01, 0.989) per OpenEnv Phase 2 requirements. The agent that learns to read the environment's signals — rather than hardcode sequences — achieves the highest rewards.
 
 ---
 
@@ -90,15 +102,15 @@ Each scenario shows its description immediately on selection, so judges and user
 | ID | Name | Difficulty | Description |
 |----|------|------------|-------------|
 | `t1_config` | Config File Repair | Easy | Rename `conf.bak` → `conf` to restore app startup |
-| `t2_port` | Port Occupation | Medium | Kill the rogue process blocking port 8080 |
+| `t2_port` | Port Occupation | Medium | Kill rogue process PID **4242** blocking port 8080, then start app |
 | `t3_dep` | Missing Dependencies | Hard | Run `npm install` to restore missing Node.js packages |
 | `t4_trap` | Healthy System Trap | Hard | Recognize an already-healthy system and avoid unnecessary actions |
 | `t5_disk_full` | Disk Full — Log Overflow | Medium | Delete the massive `/var/log/syslog` file consuming all disk space |
-| `t6_oom_killer` | OOM Killer — Memory Hog | Hard | Kill the rogue `memory_hog` process (PID 999) leaking RAM |
-| `t7_cascading_meltdown` | Cascading Meltdown | Hard | Rogue logger floods disk causing DB crash. 4-step ordered fix required. |
-| `t8_memory_leak_loop` | Memory Leak Restart Loop | Hard | Service in crash-restart loop due to memory leak. Kill, stabilize, restore. |
+| `t6_oom_killer` | OOM Killer — Memory Hog | Hard | Kill rogue `memory_hog` process PID **5555** leaking RAM |
+| `t7_cascading_meltdown` | Cascading Meltdown | Hard | Rogue logger PID **6666** floods disk causing DB crash. 4-step ordered fix required. |
+| `t8_memory_leak_loop` | Memory Leak Restart Loop | Hard | Kill leaking process PID **7777**, then restart `leak-daemon`. |
 | `t9_dependency_chain_failure` | Dependency Chain Failure | Hard | App fails due to cascade dependency. Trace app->cache->db and restore in order. |
-| `t10_config_secret_failure` | Config Secret Failure | Hard | Invalid secret causes auth crash. Find bad secret, fix, restart. |
+| `t10_config_secret_failure` | Config Secret Failure | Hard | Invalid secret causes auth crash. Find bad secret, write `APP_SECRET=correctvalue123`, restart. |
 
 ---
 
@@ -185,10 +197,10 @@ Each episode seeds a **stateful world model** into `sandbox.state`:
 
 ```python
 {
-  "disk_usage": 100,        # 0–100%
+  "disk_usage": 20,         # 0–100% — 100 only for disk-failure tasks (t5, t7)
   "memory_usage": 97,       # 0–100%
   "services_running": {"db": False, "app": True},
-  "rogue_pid": 5329,        # randomized per episode
+  "rogue_pid": 4242,        # deterministic per task (t2=4242, t6=5555, t7=6666, t8=7777)
   "config_valid": False,
 }
 ```
@@ -246,14 +258,15 @@ Ten tasks across three difficulty tiers. Each requires **multi-step sequential r
 | `t9_dependency_chain_failure` | db→cache→app all down | 5 ordered | log trace → restart db → cache → app |
 | `t10_config_secret_failure` | Wrong DB secret in config | 5 ordered | log → inspect → echo secret → restart |
 
-### Anti-Hardcoding: Randomization
+### Deterministic State (Training-Stable)
 
-Every episode randomizes:
-- **Rogue PIDs** (T2, T6, T7, T8): `random.randint(300, 9999)`
-- **Port numbers** (T2): `random.randint(8000, 9000)`
-- **Log filenames** (T5): `syslog-{random_id}`
+PIDs are deterministic per task to allow stable GRPO training (agent can learn correct kill commands):
+- **t2_port** — PID `4242`, port `8080`
+- **t6_oom_killer** — PID `5555`
+- **t7_cascading_meltdown** — PID `6666`
+- **t8_memory_leak_loop** — PID `7777`
 
-Agents **cannot** memorize answers.
+The environment state (disk%, memory%, service flags) still varies meaningfully across tasks. Multi-agent evaluation continues to require dynamic `ps aux` parsing.
 
 ---
 
@@ -365,11 +378,16 @@ AUTO_SRE_URL=https://goated1-auto-sre.hf.space python scripts/train_grpo.py
 
 ### Training Results
 
-After training, `reward_curve.png` is saved with:
-- **Overall reward curve** across all training steps
-- **Per-task bar chart** showing average reward per scenario
+After training, plots are saved to `plots/` with:
+- **Overall reward curve** — average reward per training step
+- **Loss curve** — surrogate policy loss per step
+- **Per-task bar chart** — average reward per scenario
 
-![Reward Curve](./reward_curve.png)
+![Reward Curve](./plots/reward_curve.png)
+*Reward per training step across all 10 SRE tasks — higher is better. Convergence expected after ~50 steps with corrected training loop.*
+
+![Loss Curve](./plots/loss_curve.png)
+*GRPO surrogate loss per step — volatile by design; downward trend in grad norm confirms stable learning.*
 
 ```text
 [REWARD LOG] Avg: 0.0100 | Step 1    ← model starts with random commands
@@ -388,7 +406,7 @@ After training, `reward_curve.png` is saved with:
 | `POST` | `/step` | Run command. Body: `{"tool": "run_command", "arguments": "ls /etc/app"}` |
 | `GET` | `/state` | Full sandbox state snapshot |
 | `GET` | `/tasks` | All 10 task definitions |
-| `GET` | `/grader` | Current grader score (non-destructive) |
+| `GET` | `/grader?task_id=<id>` | Current grader score — validates `task_id` matches active session |
 | `GET` | `/healthz` | Health check |
 | `GET` | `/docs` | Swagger UI |
 

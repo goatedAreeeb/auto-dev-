@@ -29,19 +29,20 @@ class Session:
 
     def load_task(self, task_id: str) -> None:
         """Reset the session to a fresh episode for the given task."""
-        self.task_def = get_task(task_id)  # raises KeyError if not found
-        assert self.task_def is not None  # type guard for static analysis
-        fs, pm = self.task_def.build_initial_state()
+        self.task_def = get_task(task_id)
+        assert self.task_def is not None
 
-        # Inject task-specific world model state if provided
-        import importlib
-        try:
-            task_module = importlib.import_module(f"tasks.{task_id}")
-            initial_state = getattr(task_module, "_state_hint", {})
-        except Exception:
-            initial_state = {}
+        # BUG-13 FIX: build_initial_state now returns (fs, pm, state_hint) 3-tuple.
+        # No more global _state_hint mutation or getattr hacks.
+        result = self.task_def.build_initial_state()
+        if len(result) == 3:
+            fs, pm, state_hint = result
+        else:
+            # backwards-compat shim if any task still returns 2-tuple
+            fs, pm = result
+            state_hint = {}
 
-        self.sandbox = Sandbox(fs, pm, initial_state=dict(initial_state))
+        self.sandbox = Sandbox(fs, pm, initial_state=dict(state_hint))
         self.step_count = 0
         self.is_done = False
         self.command_history_full.clear()

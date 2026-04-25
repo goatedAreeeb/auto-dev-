@@ -4,21 +4,18 @@ from engine.filesystem import MockFile, MockFilesystem
 from engine.process_manager import MockProcess, ProcessManager
 from grader.health_check import DependencyGrader
 
-
 TASK_ID = "t3_dep"
 DESCRIPTION = "The app fails to start because the 'dotenv' package is missing. Run npm install."
 MAX_STEPS = 15
 
 
-def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
+def build_initial_state() -> tuple:
     """Create the broken baseline state for this task."""
     fs = MockFilesystem()
-
     fs.set_base({
         "/etc/hostname": MockFile(path="/etc/hostname", content="auto-sre-host"),
         "/var/log/syslog": MockFile(path="/var/log/syslog", content="system boot ok\n"),
     })
-
     fs.set_overlay({
         "/home/user/app/package.json": MockFile(
             path="/home/user/app/package.json",
@@ -34,18 +31,16 @@ def build_initial_state() -> tuple[MockFilesystem, ProcessManager]:
             content="# MyApp\n\nInstall deps: `npm install`\nRun: `node app.js`\n",
         ),
     })
-
     pm = ProcessManager()
     pm.load([
         MockProcess(pid=1, command="init", port_bindings=[]),
     ])
-
-    return fs, pm
-
-_state_hint: dict = {
-    "dependencies_installed": False,
-    "services_running": {"app": False}
-}
+    state_hint = {
+        "disk_usage": 20,
+        "dependencies_installed": False,
+        "services_running": {"app": False},
+    }
+    return fs, pm, state_hint
 
 
 GRADER = DependencyGrader()
