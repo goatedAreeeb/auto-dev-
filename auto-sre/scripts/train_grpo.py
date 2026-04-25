@@ -57,17 +57,17 @@ class _Dummy:
 def _make_stub(name: str) -> _ModuleType:
     """Return a stub that Python treats as a *package* (not just a module).
 
-    The critical fix: setting __path__ = [] tells the import system this is a
-    package, so `from name.sub.mod import X` no longer raises
-    "name.sub is not a package".  Without __path__ that error fires even when
-    the dotted name is already in sys.modules.
+    __path__ = []  → marks as package so dotted child imports resolve.
+    __getattr__    → any `from stub import X` returns _Dummy() automatically.
+                     This ends all future whack-a-mole for new vllm sub-symbols.
     """
     stub = _ModuleType(name)
-    stub.__spec__ = _im.ModuleSpec(name, loader=None, is_package=True)
-    stub.__loader__ = None
-    stub.__package__ = name
-    stub.__path__ = []   # marks as package; child sub-imports now resolve
-    stub.__file__ = None
+    stub.__spec__     = _im.ModuleSpec(name, loader=None, is_package=True)
+    stub.__loader__   = None
+    stub.__package__  = name
+    stub.__path__     = []        # marks as package
+    stub.__file__     = None
+    stub.__getattr__  = lambda attr: _Dummy()   # ← THE PERMANENT FIX
     return stub
 
 
@@ -91,38 +91,33 @@ _STUB_MODULES = [
     # use_vllm=False prevents runtime use but not the module-level import chain.
     "vllm",
     "vllm.distributed",
-    "vllm.distributed.utils",                        # StatelessProcessGroup
+    "vllm.distributed.utils",
     "vllm.distributed.device_communicators",
-    "vllm.distributed.device_communicators.pynccl",  # PyNcclCommunicator
+    "vllm.distributed.device_communicators.pynccl",
     "vllm.sampling_params",
     "vllm.outputs",
     "vllm.lora",
     "vllm.lora.request",
+    # vllm_ascend — Huawei NPU backend, imported unconditionally in vllm_client.py
+    "vllm_ascend",
+    "vllm_ascend.distributed",
+    "vllm_ascend.distributed.device_communicators",
+    "vllm_ascend.distributed.device_communicators.pyhccl",
 ]
 for _m in _STUB_MODULES:
     sys.modules[_m] = _make_stub(_m)   # always overwrite stale/broken entries
 
-# Inject named symbols pulled via `from X import Y`
-# Package stubs satisfy `import X.Y` but `from X.Y import Z` still raises
-# ImportError when Z is absent — populate every name vllm_client.py uses.
-
-_vllm       = sys.modules["vllm"]
+# Inject named symbols — __getattr__ on stubs handles most cases automatically,
+# but pre-populate the most critical ones for clarity and safety.
 _dist_utils = sys.modules["vllm.distributed.utils"]
 _pynccl     = sys.modules["vllm.distributed.device_communicators.pynccl"]
-_sampling   = sys.modules["vllm.sampling_params"]
-_outputs    = sys.modules["vllm.outputs"]
-_lora_req   = sys.modules["vllm.lora.request"]
+_pyhccl     = sys.modules["vllm_ascend.distributed.device_communicators.pyhccl"]
 
-for _attr in ("LLM", "SamplingParams", "RequestOutput", "CompletionOutput",
-              "PoolingParams", "EmbeddingRequestOutput"):
-    setattr(_vllm, _attr, _Dummy)
+_dist_utils.StatelessProcessGroup = _Dummy
+_pynccl.PyNcclCommunicator        = _Dummy
+_pyhccl.PyHcclCommunicator        = _Dummy   # vllm_client.py line 38
 
-_dist_utils.StatelessProcessGroup = _Dummy   # vllm_client.py line 35
-_pynccl.PyNcclCommunicator        = _Dummy   # vllm_client.py line 34
-_sampling.SamplingParams          = _Dummy
-_outputs.RequestOutput            = _Dummy
-_outputs.CompletionOutput         = _Dummy
-_lora_req.LoRARequest             = _Dummy
+
 
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
