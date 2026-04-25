@@ -39,13 +39,8 @@ import torch
 # ---------------------------------------------------------------------------
 from types import ModuleType as _ModuleType
 
-def _stub_module(name: str) -> None:
-    """Register an empty stub in sys.modules so `import name` succeeds."""
-    if name not in sys.modules:
-        stub = _ModuleType(name)
-        sys.modules[name] = stub
-
-# Stub every sub-path llm_blender tries to load
+# Always overwrite — covers the case where broken llm_blender was already
+# loaded into sys.modules by a previous import attempt.
 for _m in [
     "llm_blender",
     "llm_blender.blender",
@@ -54,7 +49,8 @@ for _m in [
     "llm_blender.pair_ranker",
     "llm_blender.pair_ranker.config",
 ]:
-    _stub_module(_m)
+    sys.modules[_m] = _ModuleType(_m)   # unconditional replace
+
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
