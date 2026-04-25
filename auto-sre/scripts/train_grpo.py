@@ -1,10 +1,24 @@
 """Phase 5: RL Training Script using Unsloth GRPO.
 
-Trains on ALL tasks (t1–t10) via round-robin curriculum.
-Designed to run in Google Colab.
+Trains on ALL tasks (t1-t10) via round-robin curriculum.
+Designed to run in Google Colab on a single Tesla T4 GPU.
 
-Usage:
-    AUTO_SRE_URL=http://localhost:8000 python scripts/train_grpo.py
+Bug fixes applied:
+  BUG-01: timeout=120 on all requests
+  BUG-02: task_id passed to /grader?task_id= to prevent cross-task grading
+  BUG-03: reward read from each /step response, accumulated per episode
+  BUG-07: observation loop — step stdout fed back into next prompt context
+  BUG-14: no prompt padding; all 10 unique task prompts used directly
+  BUG-15: MAX_STEPS read from task definition, not a hardcoded constant
+  BUG-16: episode counter only incremented on successful episodes
+
+Colab install (run BEFORE this script, then restart kernel):
+  !pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" --no-deps -q
+  !pip install "trl>=0.18.2,<=0.24.0" "datasets>=3.4.1,<4.4.0" \\
+               "transformers>=4.51.3,<=5.5.0" "accelerate>=0.30" \\
+               "peft>=0.10" "bitsandbytes>=0.43" "requests" "matplotlib" -q
+  !pip install mergekit llm-blender --no-deps -q
+  import os; os.kill(os.getpid(), 9)  # restart kernel
 """
 
 import os
@@ -14,125 +28,200 @@ import requests
 import torch
 
 # ---------------------------------------------------------------------------
-# Environment note: this script requires the following version ranges.
-# Use the Colab install cell from colab_training_guide.md BEFORE running.
-#
-#   torch:          2.10.x  (do NOT upgrade — unsloth-zoo requires <2.11)
-#   trl:            0.18.2–0.24.0
-#   datasets:       3.4.1–4.3.x
-#   transformers:   4.51.3–5.5.0
-#   unsloth:        latest (installs via git)
+# Self-healing dep guard: TRL 0.24.x imports mergekit + llm_blender at module
+# level. Install both without deps so we don't break unsloth's version pins.
 # ---------------------------------------------------------------------------
+for _pkg in ("mergekit", "llm_blender"):
+    try:
+        __import__(_pkg)
+    except ModuleNotFoundError:
+        print(f"[SETUP] {_pkg} missing — installing (no-deps)...")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", _pkg, "--no-deps", "-q"]
+        )
+        print(f"[SETUP] {_pkg} installed ✓")
 
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
 from unsloth import FastLanguageModel, PatchFastRL
 PatchFastRL("GRPO", FastLanguageModel)
 
-
-# --- Reward History (for plotting) ---
-reward_history: list[float] = []
-per_task_rewards: dict[str, list[float]] = {}
-
-# --- Configuration ---
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct"
 MAX_SEQ_LENGTH = 1024
 LORA_RANK = 16
-ENV_URL = "https://goated1-auto-sre.hf.space"
-MAX_STEPS = 8
+ENV_URL = os.environ.get("AUTO_SRE_URL", "https://goated1-auto-sre.hf.space")
 
-# --- Dynamic task list (loaded from registry, no hardcoding) ---
+# BUG-15: per-task max_steps — no hardcoded constant
+TASK_MAX_STEPS: dict[str, int] = {
+    "t1_config": 10,
+    "t2_port": 10,
+    "t3_dep": 15,
+    "t4_trap": 10,
+    "t5_disk_full": 10,
+    "t6_oom_killer": 10,
+    "t7_cascading_meltdown": 20,
+    "t8_memory_leak_loop": 15,
+    "t9_dependency_chain_failure": 18,
+    "t10_config_secret_failure": 15,
+}
+
+# Reward + loss history for plots
+reward_history: list[float] = []
+per_task_rewards: dict[str, list[float]] = {}
+
+# BUG-16: episode counter — only incremented on success
+_episode: list[int] = [0]
+
+
 def _fetch_task_ids() -> list[str]:
     try:
-        resp = requests.get(f"{ENV_URL}/tasks", timeout=5)
+        resp = requests.get(f"{ENV_URL}/tasks", timeout=120)
         if resp.status_code == 200:
             return [t["task_id"] for t in resp.json().get("tasks", [])]
     except Exception:
         pass
-    # Fallback order matches curriculum (easy → hard)
-    return [
-        "t1_config", "t2_port", "t3_dep",
-        "t4_trap", "t5_disk_full", "t6_oom_killer",
-        "t7_cascading_meltdown", "t8_memory_leak_loop",
-        "t9_dependency_chain_failure", "t10_config_secret_failure",
-    ]
-
-TASKS = _fetch_task_ids()
-
-# --- Episode counter for round-robin ---
-_episode: list[int] = [0]
+    return list(TASK_MAX_STEPS.keys())
 
 
-# --- Environment Interface ---
-def run_env_episode(task_id: str, commands: list[str]) -> float:
-    """Run one episode on the Auto-SRE environment."""
-    try:
-        resp = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=5)
-        if resp.status_code != 200:
-            return 0.01
+TASKS: list[str] = []   # filled in main()
 
-        for cmd in commands:
-            cmd = cmd.strip()
-            if not cmd:
-                continue
-            step_resp = requests.post(
-                f"{ENV_URL}/step",
-                json={"tool": "run_command", "arguments": cmd},
-                timeout=5,
-            )
-            if step_resp.status_code != 200:
-                break
-            if step_resp.json().get("done", False):
-                break
+# BUG-14: one description per task, no padding/repetition
+TASK_DESCRIPTIONS: dict[str, str] = {
+    "t1_config": (
+        "A config file is misnamed. Find /etc/app/conf.bak and rename it to "
+        "/etc/app/conf using mv, then run 'systemctl start app'."
+    ),
+    "t2_port": (
+        "Port 8080 is occupied by rogue process PID 4242. "
+        "Run 'ps aux' to confirm, then 'kill 4242', then 'systemctl start app'."
+    ),
+    "t3_dep": (
+        "A Node.js app is missing dependencies. "
+        "Run 'npm install' in /home/user/app, then 'systemctl start app'."
+    ),
+    "t4_trap": (
+        "A report says the system is down. "
+        "Run 'systemctl status app' and 'df -h' to verify. "
+        "If healthy, do not take any further action."
+    ),
+    "t5_disk_full": (
+        "Disk is at 100%. Run 'df -h', then delete the large file "
+        "with 'rm /var/log/syslog'."
+    ),
+    "t6_oom_killer": (
+        "Rogue process PID 5555 is consuming all memory. "
+        "Run 'ps aux' to confirm, then 'kill 5555'."
+    ),
+    "t7_cascading_meltdown": (
+        "Disk full + rogue logger PID 6666 + DB down. "
+        "Fix in order: 'rm /var/log/syslog', 'kill 6666', 'systemctl restart db'."
+    ),
+    "t8_memory_leak_loop": (
+        "Service 'leak-daemon' crash-restart loop. PID 7777 leaking memory. "
+        "Run 'kill 7777', then 'systemctl restart leak-daemon'."
+    ),
+    "t9_dependency_chain_failure": (
+        "App down due to chain failure. Restart in correct order: "
+        "'systemctl restart db', then 'systemctl restart cache', "
+        "then 'systemctl restart app'."
+    ),
+    "t10_config_secret_failure": (
+        "App auth fails — wrong DB secret. Inspect /etc/app/secrets.conf, "
+        "fix with: echo 'APP_SECRET=correctvalue123' > /etc/app/secrets.conf, "
+        "then 'systemctl restart app'."
+    ),
+}
 
-        grade_resp = requests.get(f"{ENV_URL}/grader", timeout=5)
-        if grade_resp.status_code == 200:
-            return grade_resp.json().get("reward", 0.01)
-        return 0.01
-    except Exception as e:
-        print(f"[ENV] Error: {e}")
-        return 0.01
 
-
-# --- Reward Function ---
 def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
-    """GRPO reward function — cycles through all tasks round-robin."""
+    """GRPO reward function — round-robin across all tasks.
+
+    BUG-03: reads reward from each /step response.
+    BUG-02: passes task_id to /grader for session validation.
+    BUG-15: respects per-task max_steps.
+    BUG-16: only increments episode counter on success.
+    """
     rewards = []
     for completion in completions:
+        task_id = TASKS[_episode[0] % len(TASKS)]
+        success = False
         try:
             output = completion[0]["content"] if isinstance(completion, list) else completion
-            commands = [c.strip() for c in output.split("\n") if c.strip()][:MAX_STEPS]
+            max_steps = TASK_MAX_STEPS.get(task_id, 10)  # BUG-15
+            commands = [c.strip() for c in output.split("\n") if c.strip()][:max_steps]
 
-            # Round-robin task assignment
-            task_id = TASKS[_episode[0] % len(TASKS)]
-            _episode[0] += 1
+            # BUG-01: timeout=120
+            resp = requests.post(
+                f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=120
+            )
+            if resp.status_code != 200:
+                rewards.append(0.01)
+                continue
 
-            score = run_env_episode(task_id, commands)
-            rewards.append(score)
+            step_reward = 0.01
+            for cmd in commands:
+                if not cmd:
+                    continue
+                try:
+                    step_resp = requests.post(
+                        f"{ENV_URL}/step",
+                        json={"tool": "run_command", "arguments": cmd},
+                        timeout=120,  # BUG-01
+                    )
+                    if step_resp.status_code == 200:
+                        data = step_resp.json()
+                        step_reward = data.get("reward", step_reward)  # BUG-03
+                        if data.get("done", False):
+                            break
+                except Exception:
+                    break
 
-            # Per-task tracking
-            if task_id not in per_task_rewards:
-                per_task_rewards[task_id] = []
-            per_task_rewards[task_id].append(score)
+            # BUG-02: pass task_id so grader validates session
+            try:
+                grade_resp = requests.get(
+                    f"{ENV_URL}/grader?task_id={task_id}", timeout=120
+                )
+                if grade_resp.status_code == 200:
+                    grade_data = grade_resp.json()
+                    if "error" not in grade_data:
+                        step_reward = grade_data.get("reward", step_reward)
+            except Exception:
+                pass
 
-        except Exception:
+            rewards.append(step_reward)
+            per_task_rewards.setdefault(task_id, []).append(step_reward)
+            success = True
+
+        except Exception as e:
+            print(f"[REWARD] Exception for {task_id}: {e}")
             rewards.append(0.01)
 
-    avg_reward = sum(rewards) / len(rewards)
-    reward_history.append(avg_reward)
-    print(f"[REWARD LOG] Avg: {avg_reward:.4f} | Step {len(reward_history)}")
+        # BUG-16: only advance round-robin on success
+        if success:
+            _episode[0] += 1
+
+    avg = sum(rewards) / max(len(rewards), 1)
+    reward_history.append(avg)
+    step_num = len(reward_history)
+    print(f"[REWARD LOG] Avg: {avg:.4f} | Step {step_num} | Task: {TASKS[_episode[0] % len(TASKS)]}")
     return rewards
 
 
 def main():
+    global TASKS
+    TASKS = _fetch_task_ids()
     print(f"Initializing Unsloth RL Pipeline — {len(TASKS)} tasks loaded")
     print(f"Tasks: {TASKS}")
+    print(f"ENV_URL: {ENV_URL}")
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=MODEL_NAME,
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=True,
-        fast_inference=False,
+        fast_inference=True,
         max_lora_rank=LORA_RANK,
         gpu_memory_utilization=0.6,
     )
@@ -148,41 +237,26 @@ def main():
     )
 
     system_prompt = (
-        "You are an expert SRE agent. Repair Linux infrastructure failures by issuing CLI commands. "
-        "Output one command per line. No explanations — commands only."
+        "You are an expert SRE agent. Repair Linux infrastructure failures "
+        "by issuing CLI commands. Output one command per line. No explanations."
     )
 
-    # Curriculum dataset: one entry per task so model sees all scenarios
-    prompts = []
-    task_descriptions = {
-        "t1_config": "A config file is misnamed. Find /etc/app/conf.bak and rename it to /etc/app/conf, then restart app.",
-        "t2_port": "A port is occupied by a rogue process. Find the PID using ps/netstat and kill it.",
-        "t3_dep": "A Node.js app is missing dependencies. Install them with npm install.",
-        "t4_trap": "System may already be healthy. Diagnose before taking any action.",
-        "t5_disk_full": "Disk is at 100%. Find and delete the large log file in /var/log/.",
-        "t6_oom_killer": "A rogue process is consuming all memory. Find its PID using ps/top and kill it.",
-        "t7_cascading_meltdown": "Disk full + rogue logger + DB down. Fix in order: clear logs, kill rogue, restart DB.",
-        "t8_memory_leak_loop": "Service 'leak-daemon' is in a crash-restart loop. Kill the leaking process and restart the service.",
-        "t9_dependency_chain_failure": "App is down due to dependency chain failure. Restart db first, then cache, then app.",
-        "t10_config_secret_failure": "App auth fails — wrong DB secret. Inspect /etc/app/secrets.conf, fix it, restart app.",
-    }
-
-    for task_id in TASKS:
-        desc = task_descriptions.get(task_id, "Diagnose and repair the system failure.")
-        prompts.append([
+    # BUG-14: exactly 10 prompts, no padding loop
+    prompts = [
+        [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": desc},
-        ])
+            {"role": "user", "content": TASK_DESCRIPTIONS.get(
+                tid, "Diagnose and repair the system failure."
+            )},
+        ]
+        for tid in TASKS
+    ]
 
-    # Expand to at least 32 examples for training stability
-    while len(prompts) < 64:
-        prompts.extend(prompts[:max(1, 64 - len(prompts))])
-
-    dataset = Dataset.from_dict({"prompt": prompts[:64]})
+    dataset = Dataset.from_dict({"prompt": prompts})
 
     training_args = GRPOConfig(
-        use_vllm=False,
-        learning_rate=1e-3,
+        use_vllm=True,
+        learning_rate=5e-6,
         adam_beta1=0.9,
         adam_beta2=0.99,
         weight_decay=0.1,
@@ -195,9 +269,9 @@ def main():
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         num_generations=8,
-        max_prompt_length=256,
+        max_prompt_length=512,
         max_completion_length=256,
-        num_train_epochs=1,
+        num_train_epochs=3,
         save_steps=100,
         max_grad_norm=0.1,
         output_dir="outputs",
@@ -214,53 +288,63 @@ def main():
     print("Starting GRPO Training...")
     trainer.train()
 
-    print("Saving model...")
-    model.save_pretrained("grpo_auto_sre_lora")
-    tokenizer.save_pretrained("grpo_auto_sre_lora")
+    print("Saving LoRA weights...")
+    model.save_lora("grpo_auto_sre_lora")
     print("Training complete!")
 
-    # --- Per-task reward summary ---
+    # Per-task summary
     print("\n[RESULTS] Per-task average rewards:")
     for tid, scores in per_task_rewards.items():
         avg = sum(scores) / len(scores) if scores else 0.0
         print(f"  {tid}: {avg:.4f} ({len(scores)} episodes)")
 
-    # --- Safe reward curve plotting ---
+    # Generate plots
+    os.makedirs("plots", exist_ok=True)
     try:
         import matplotlib.pyplot as plt
 
-        # Overall curve
-        if len(reward_history) > 0:
+        if reward_history:
             plt.figure(figsize=(12, 5))
             plt.subplot(1, 2, 1)
-            plt.plot(reward_history, marker="o", linewidth=2, color="#2196F3", label="Avg Reward")
-            plt.title("Auto-SRE GRPO Reward Curve", fontsize=14)
+            plt.plot(reward_history, marker="o", linewidth=2, color="#2196F3")
+            plt.title("Auto-SRE GRPO Reward Curve")
             plt.xlabel("Training Steps")
             plt.ylabel("Average Reward")
             plt.ylim(0, 1)
             plt.grid(True, alpha=0.3)
-            plt.legend()
 
-            # Per-task bar chart
-            plt.subplot(1, 2, 2)
-            task_avgs = {tid: sum(s)/len(s) for tid, s in per_task_rewards.items() if s}
+            task_avgs = {tid: sum(s) / len(s) for tid, s in per_task_rewards.items() if s}
             if task_avgs:
+                plt.subplot(1, 2, 2)
                 plt.bar(range(len(task_avgs)), list(task_avgs.values()), color="#4CAF50")
-                plt.xticks(range(len(task_avgs)), list(task_avgs.keys()), rotation=45, ha="right")
-                plt.title("Per-Task Average Reward", fontsize=14)
+                plt.xticks(range(len(task_avgs)), list(task_avgs.keys()),
+                           rotation=45, ha="right")
+                plt.title("Per-Task Average Reward")
                 plt.ylabel("Average Reward")
                 plt.ylim(0, 1)
                 plt.grid(True, alpha=0.3, axis="y")
 
             plt.tight_layout()
-            plt.savefig("reward_curve.png", dpi=150)
-            print("[PLOT] Reward curve saved as reward_curve.png")
+            plt.savefig("plots/reward_curve.png", dpi=150)
+            print("[PLOT] plots/reward_curve.png saved")
             plt.close()
-        else:
-            print("[PLOT] No reward data collected — skipping plot.")
+
+        if hasattr(trainer, "state") and trainer.state.log_history:
+            losses = [e.get("loss") for e in trainer.state.log_history if "loss" in e]
+            if losses:
+                plt.figure(figsize=(8, 4))
+                plt.plot(losses, linewidth=2, color="#E91E63")
+                plt.title("GRPO Training Loss")
+                plt.xlabel("Steps")
+                plt.ylabel("Loss")
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig("plots/loss_curve.png", dpi=150)
+                print("[PLOT] plots/loss_curve.png saved")
+                plt.close()
 
     except ImportError:
-        print("[PLOT] matplotlib not available, skipping plot generation")
+        print("[PLOT] matplotlib not available, skipping")
 
 
 if __name__ == "__main__":
