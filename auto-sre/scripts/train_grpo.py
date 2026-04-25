@@ -28,20 +28,43 @@ import requests
 import torch
 
 # ---------------------------------------------------------------------------
-# Self-healing dep guard: TRL 0.24.x imports mergekit + llm_blender at module
-# level. mergekit: no-deps (its accelerate pin conflicts with unsloth).
-# llm_blender: needs dataclasses_json, install that too.
+# Dependency shims — must run BEFORE `from trl import ...`
+#
+# Root cause: TRL 0.24.x hard-imports llm_blender in judges.py.
+# llm_blender imports `TRANSFORMERS_CACHE` which was REMOVED in transformers>=4.38.
+# We never use LLMBlenderPairRMJudge so we inject an empty stub into sys.modules.
+# This stops TRL's import chain from crashing without installing broken packages.
+#
+# mergekit is also imported by TRL but works fine with --no-deps.
 # ---------------------------------------------------------------------------
-for _pkg, _no_deps in (("mergekit", True), ("dataclasses_json", False), ("llm_blender", False)):
-    try:
-        __import__(_pkg)
-    except ModuleNotFoundError:
-        print(f"[SETUP] {_pkg} missing — installing...")
-        cmd = [sys.executable, "-m", "pip", "install", _pkg, "-q"]
-        if _no_deps:
-            cmd.append("--no-deps")
-        subprocess.check_call(cmd)
-        print(f"[SETUP] {_pkg} installed ✓")
+from types import ModuleType as _ModuleType
+
+def _stub_module(name: str) -> None:
+    """Register an empty stub in sys.modules so `import name` succeeds."""
+    if name not in sys.modules:
+        stub = _ModuleType(name)
+        sys.modules[name] = stub
+
+# Stub every sub-path llm_blender tries to load
+for _m in [
+    "llm_blender",
+    "llm_blender.blender",
+    "llm_blender.blender.blender",
+    "llm_blender.blender.blender_utils",
+    "llm_blender.pair_ranker",
+    "llm_blender.pair_ranker.config",
+]:
+    _stub_module(_m)
+
+# mergekit: install without deps (its accelerate/safetensors pins break unsloth)
+try:
+    import mergekit  # noqa: F401
+except ModuleNotFoundError:
+    print("[SETUP] mergekit missing — installing (no-deps)...")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "mergekit", "--no-deps", "-q"]
+    )
+    print("[SETUP] mergekit installed ✓")
 
 
 from datasets import Dataset
