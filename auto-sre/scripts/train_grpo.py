@@ -14,33 +14,15 @@ import requests
 import torch
 
 # ---------------------------------------------------------------------------
-# TRL version guard — TRL >= 0.16 adds llm_blender + mergekit as hard imports.
-# Pin to 0.15.2 which has stable GRPOTrainer without these deps.
-# This self-heals in Colab when a newer TRL is pre-installed.
+# Environment note: this script requires the following version ranges.
+# Use the Colab install cell from colab_training_guide.md BEFORE running.
+#
+#   torch:          2.10.x  (do NOT upgrade — unsloth-zoo requires <2.11)
+#   trl:            0.18.2–0.24.0
+#   datasets:       3.4.1–4.3.x
+#   transformers:   4.51.3–5.5.0
+#   unsloth:        latest (installs via git)
 # ---------------------------------------------------------------------------
-def _ensure_trl_compat() -> None:
-    try:
-        import trl as _trl
-        from packaging.version import Version
-        if Version(_trl.__version__) >= Version("0.16.0"):
-            print(f"[SETUP] TRL {_trl.__version__} has breaking imports — pinning to 0.15.2...")
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install",
-                "trl==0.15.2", "-q", "--force-reinstall"
-            ])
-            # Re-import after reinstall
-            import importlib
-            import trl
-            importlib.reload(trl)
-            print("[SETUP] TRL pinned to 0.15.2 ✓")
-    except Exception:
-        # If packaging not available or other error, attempt install anyway
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "trl==0.15.2", "-q", "--force-reinstall"
-        ])
-
-_ensure_trl_compat()
 
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
