@@ -12,7 +12,7 @@ import json
 import requests
 from collections import deque
 
-ENV_URL = os.getenv("AUTO_SRE_URL", "http://127.0.0.1:8000")
+ENV_URL = "https://goated1-auto-sre.hf.space"
 MAX_ITERATIONS = 3   # planner re-tries per task
 MAX_STEPS = 15       # max commands per executor run
 
@@ -21,29 +21,35 @@ _SCORE_MAX = 0.989
 
 def check_env():
     try:
+        print(f"[DEBUG] Calling -> {ENV_URL}/state")
         resp = requests.get(f"{ENV_URL}/state", timeout=5)
         return resp.status_code == 200
     except Exception:
         return False
 
 def safe_post(path, body):
-    for _ in range(2):
-        try:
-            resp = requests.post(f"{ENV_URL}{path}", json=body, timeout=10)
-            return resp.json()
-        except Exception:
-            continue
-
-    return {
-        "stdout": "",
-        "stderr": "ENV_CONNECTION_FAILED",
-        "error": "connection_error"
-    }
+    print(f"[DEBUG] Calling -> {ENV_URL}{path}")
+    try:
+        resp = requests.post(f"{ENV_URL}{path}", json=body, timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": "ENV_CONNECTION_FAILED",
+            "error": str(e)
+        }
 
 def _get(path: str) -> dict:
-    resp = requests.get(f"{ENV_URL}{path}", timeout=10)
-    resp.raise_for_status()
-    return resp.json()
+    print(f"[DEBUG] Calling -> {ENV_URL}{path}")
+    try:
+        resp = requests.get(f"{ENV_URL}{path}", timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": "ENV_CONNECTION_FAILED",
+            "error": str(e)
+        }
 
 def _safe(score) -> float:
     try:

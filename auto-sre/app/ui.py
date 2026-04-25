@@ -7,8 +7,7 @@ import gradio as gr  # type: ignore
 
 from openai import AsyncOpenAI
 
-# The API base URL on which the app internally runs natively alongside the UI
-API_BASE = os.getenv("AUTO_SRE_URL", "http://127.0.0.1:8000")
+ENV_URL = "https://goated1-auto-sre.hf.space"
 CSS = """
 /* Dark Emerald / Hacker Green Theme */
 .gradio-container {
@@ -202,20 +201,42 @@ def update_task_description(task_id: str) -> str:
     desc = TASK_DESCRIPTIONS.get(task_id, "Select a scenario to see its description.")
     return f"<div style='background:rgba(16, 185, 129, 0.12);border-left:4px solid #10b981;border-radius:6px;padding:12px;color:#a7f3d0;font-size:0.95em;margin-top:10px;'><b>📌 Task:</b> {desc}</div>"
 
+import requests
+
+def safe_post(path, body):
+    print(f"[DEBUG] Calling -> {ENV_URL}{path}")
+    try:
+        resp = requests.post(f"{ENV_URL}{path}", json=body, timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": "ENV_CONNECTION_FAILED",
+            "error": str(e)
+        }
+
+def safe_get(path):
+    print(f"[DEBUG] Calling -> {ENV_URL}{path}")
+    try:
+        resp = requests.get(f"{ENV_URL}{path}", timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": "ENV_CONNECTION_FAILED",
+            "error": str(e)
+        }
+
 async def run_demo(task_id: str):
     """Auto-run the known solution commands for the selected task."""
     if not task_id:
         return "Select a task first.", "", 0.01, "<span class='health-neutral'>&#9898; NO TASK</span>", ""
 
     # Reset the sandbox first
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(f"{API_BASE}/reset", json={"task_id": task_id})
-            resp.raise_for_status()
-            data = resp.json()
-            cwd = data.get("cwd", "/home/user")
-        except Exception as e:
-            return f"Demo failed during reset: {e}", "", 0.01, "<span class='health-bad'>&#128308; ERROR</span>", ""
+    data = safe_post("/reset", {"task_id": task_id})
+    if "error" in data and "observation" not in data:
+        return f"Demo failed during reset: {data['error']}", "", 0.01, "<span class='health-bad'>&#128308; ERROR</span>", ""
+    cwd = data.get("cwd", "/home/user")
 
     term_out = f"=== Demo MODE ===\nTask: {task_id}\nRunning optimal solution...\n\n"
     history_html = ""
@@ -224,45 +245,42 @@ async def run_demo(task_id: str):
     known_rogue_pid = None
 
     cmds = DEMO_SOLUTIONS.get(task_id, [])
-    async with httpx.AsyncClient() as client:
-        for cmd in cmds:
-            # Substitute rogue PID placeholder once we learn it from ps output
-            if "{rogue_pid}" in cmd:
-                cmd = cmd.replace("{rogue_pid}", str(known_rogue_pid) if known_rogue_pid else "999")
+    for cmd in cmds:
+        # Substitute rogue PID placeholder once we learn it from ps output
+        if "{rogue_pid}" in cmd:
+            cmd = cmd.replace("{rogue_pid}", str(known_rogue_pid) if known_rogue_pid else "999")
 
-            try:
-                resp = await client.post(f"{API_BASE}/step", json={"tool": "run_command", "arguments": cmd})
-                resp.raise_for_status()
-                d = resp.json()
+        d = safe_post("/step", {"tool": "run_command", "arguments": cmd})
+        if "error" in d and "observation" not in d:
+            term_out += f"$ {cmd}\n[ERROR: {d['error']}]\n"
+            break
 
-                # step API wraps stdout/stderr/cwd inside "observation"
-                obs_data = d.get("observation", d)
-                stdout = obs_data.get("stdout", "")
-                stderr = obs_data.get("stderr", "")
-                cwd = obs_data.get("cwd", cwd)
-                reward = d.get("reward", reward)
-                done = d.get("done", False)
+        # step API wraps stdout/stderr/cwd inside "observation"
+        obs_data = d.get("observation", d)
+        stdout = obs_data.get("stdout", "")
+        stderr = obs_data.get("stderr", "")
+        cwd = obs_data.get("cwd", cwd)
+        reward = d.get("reward", reward)
+        done = d.get("done", False)
 
-                # Parse rogue PID from ps output for kill commands
-                if cmd.strip().startswith("ps") and stdout and known_rogue_pid is None:
-                    for line in stdout.splitlines():
-                        low = line.lower()
-                        if any(k in low for k in ("rogue", "leak-daemon --no-limit", "rogue-logger", "rogue-server", "memory-hog")):
-                            parts = line.split()
-                            for p in parts:
-                                if p.isdigit() and int(p) > 1:
-                                    known_rogue_pid = int(p)
-                                    break
+        # Parse rogue PID from ps output for kill commands
+        if cmd.strip().startswith("ps") and stdout and known_rogue_pid is None:
+            for line in stdout.splitlines():
+                low = line.lower()
+                if any(k in low for k in ("rogue", "leak-daemon --no-limit", "rogue-logger", "rogue-server", "memory-hog")):
+                    parts = line.split()
+                    for p in parts:
+                        if p.isdigit() and int(p) > 1:
+                            known_rogue_pid = int(p)
+                            break
 
-                obs = stdout or stderr or ""
-                term_out += f"$ {cmd}\n{obs}\n"
-                h_entry = f"<div class='history-item'><b>&gt; {cmd}</b><br><span class='history-out'>{obs}</span></div>"
-                history_html = h_entry + history_html
+        obs = stdout or stderr or ""
+        term_out += f"$ {cmd}\n{obs}\n"
+        h_entry = f"<div class='history-item'><b>&gt; {cmd}</b><br><span class='history-out'>{obs}</span></div>"
+        history_html = h_entry + history_html
 
-                if done:
-                    break
-            except Exception as e:
-                term_out += f"$ {cmd}\n[ERROR: {e}]\n"
+        if done:
+            break
 
     # Determine health from reward (consistent with api_step logic)
     if done and reward > 0.5:
@@ -278,72 +296,60 @@ async def api_reset(task_id: str):
     """Call the backend reset endpoint."""
     if not task_id:
         return "Please select a scenario.", "", 0.01, "<span class='health-neutral'>&#9898; NO TASK</span>", "No task selected."
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(f"{API_BASE}/reset", json={"task_id": task_id})
-            resp.raise_for_status()
-            data = resp.json()
-            cwd = data.get("cwd", "/home/user")
-            return f"--- Auto-SRE Sandbox Initialized ---\nWelcome to Scenario: {task_id}\nHint: Type shell commands to diagnose and repair.\n\n$ {cwd} > ", cwd, 0.01, "<span class='health-bad'>&#10060; BROKEN</span>", "Sandbox reset."
-        except Exception as e:
-            return f"[API ERROR] Failed to reset: {e}", "", 0.01, "<span class='health-bad'>🔴 API ERROR</span>", "Error connecting to backend API."
+    
+    data = safe_post("/reset", {"task_id": task_id})
+    if "error" in data and "observation" not in data:
+        return f"[API ERROR] Failed to reset: {data['error']}", "", 0.01, "<span class='health-bad'>🔴 API ERROR</span>", "Error connecting to backend API."
+    
+    cwd = data.get("cwd", "/home/user")
+    return f"--- Auto-SRE Sandbox Initialized ---\nWelcome to Scenario: {task_id}\nHint: Type shell commands to diagnose and repair.\n\n$ {cwd} > ", cwd, 0.01, "<span class='health-bad'>&#10060; BROKEN</span>", "Sandbox reset."
 
 async def api_step(tool: str, cmd_input: str, current_cwd: str, term_history: str, history_html: str):
     """Call the backend step endpoint and format the terminal output."""
     if not cmd_input.strip():
         return term_history, "", current_cwd, 0.0, "<span class='health-neutral'>&#9898; NO TASK</span>", history_html
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(f"{API_BASE}/step", json={"tool": tool, "arguments": cmd_input})
-            resp.raise_for_status()
-            data = resp.json()
-            
-            # Step endpoint returns { observation: {stdout, stderr, cwd, error}, reward, done }
-            # Or if it fails at top-level: { error }
-            if "error" in data and "observation" not in data:
-                term_out = term_history + f"{cmd_input}\n[ERROR: {data['error']}]\n$ {current_cwd} > "
-                h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>[ERROR]</span></div>"
-                return term_out, "", current_cwd, 0.01, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
-            
-            obs = data.get("observation", {})
-            stdout = obs.get("stdout", "")
-            stderr = obs.get("stderr", "")
-            err_msg = obs.get("error", "")
-            new_cwd = obs.get("cwd", current_cwd)
-            
-            reward = data.get("reward", 0.01)
-            done = data.get("done", False)
 
-            output_text = ""
-            if stdout:
-                output_text += stdout
-            if stderr:
-                output_text += stderr
-            if err_msg:
-                output_text += f"\n[Tool Error: {err_msg}]"
-                
-            if not output_text and not err_msg:
-                output_text = ""
+    data = safe_post("/step", {"tool": tool, "arguments": cmd_input})
+    
+    if "error" in data and "observation" not in data:
+        term_out = term_history + f"{cmd_input}\n[ERROR: {data['error']}]\n$ {current_cwd} > "
+        h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out' style='color:#ef4444;'>[ERROR] {data['error']}</span></div>"
+        return term_out, "", current_cwd, 0.01, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
+    
+    obs = data.get("observation", {})
+    stdout = obs.get("stdout", "")
+    stderr = obs.get("stderr", "")
+    err_msg = obs.get("error", "")
+    new_cwd = obs.get("cwd", current_cwd)
+    
+    reward = data.get("reward", 0.01)
+    done = data.get("done", False)
 
-            term_out = term_history + f"{cmd_input}\n{output_text}\n$ {new_cwd} > "
-            
-            h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>{output_text}</span></div>"
-            new_history_html = h_entry + history_html
-            
-            # Use strict reward checks corresponding to OpenEnv schema
-            if done and reward > 0.5:
-                health_str = "<span class='health-good'>&#129001; HEALTHY (PASS)</span>"
-            elif done:
-                health_str = "<span class='health-bad'>&#10060; FAILED</span>"
-            else:
-                health_str = "<span class='health-wait'>&#9888; AWAITING FIX</span>"
-                
-            return term_out, "", new_cwd, reward, health_str, new_history_html
+    output_text = ""
+    if stdout:
+        output_text += stdout
+    if stderr:
+        output_text += stderr
+    if err_msg:
+        output_text += f"\n[Tool Error: {err_msg}]"
+        
+    if not output_text and not err_msg:
+        output_text = ""
 
-        except Exception as e:
-            term_out = term_history + f"{cmd_input}\n[HTTPX ERROR: {e}]\n$ {current_cwd} > "
-            h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>[ERROR: {e}]</span></div>"
-            return term_out, "", current_cwd, 0.01, "<span class='health-bad'>🔴 API ERROR</span>", h_entry + history_html
+    term_out = term_history + f"{cmd_input}\n{output_text}\n$ {new_cwd} > "
+    
+    h_entry = f"<div class='history-item'><b>> {cmd_input}</b><br><span class='history-out'>{output_text}</span></div>"
+    new_history_html = h_entry + history_html
+    
+    # Use strict reward checks corresponding to OpenEnv schema
+    if done and reward > 0.5:
+        health_str = "<span class='health-good'>&#129001; HEALTHY (PASS)</span>"
+    elif done:
+        health_str = "<span class='health-bad'>&#10060; FAILED</span>"
+    else:
+        health_str = "<span class='health-wait'>&#9888; AWAITING FIX</span>"
+        
+    return term_out, "", new_cwd, reward, health_str, new_history_html
 
 
 _theme = gr.themes.Base(primary_hue="emerald", neutral_hue="emerald")

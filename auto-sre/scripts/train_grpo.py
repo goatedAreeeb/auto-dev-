@@ -23,7 +23,7 @@ per_task_rewards: dict[str, list[float]] = {}
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct"
 MAX_SEQ_LENGTH = 1024
 LORA_RANK = 16
-ENV_URL = os.getenv("AUTO_SRE_URL", "http://localhost:8000")
+ENV_URL = "https://goated1-auto-sre.hf.space"
 MAX_STEPS = 8
 
 # --- Dynamic task list (loaded from registry, no hardcoding) ---
