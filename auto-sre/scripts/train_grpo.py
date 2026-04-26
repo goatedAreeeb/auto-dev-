@@ -142,16 +142,19 @@ except ModuleNotFoundError:
     print("[SETUP] mergekit installed ✓")
 
 
+import importlib.metadata
+_orig_version = importlib.metadata.version
+def _mock_version(name):
+    if name in ("vllm", "liger_kernel"): return "0.0.0"
+    return _orig_version(name)
+importlib.metadata.version = _mock_version
+
+import unsloth  # noqa: F401
+from unsloth import FastLanguageModel
+
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
 
-# BUG-FIX-A: import unsloth FIRST, do NOT call PatchFastRL.
-# Unsloth auto-patches GRPOTrainer at import time via unsloth_zoo.
-# Calling PatchFastRL manually crashes because inspect.getsource() fails
-# on already-patched functions. Confirmed working by the log line:
-# "Unsloth: UnslothGRPOTrainer is already patched"
-import unsloth  # noqa: F401 — must be imported to trigger auto-patch
-from unsloth import FastLanguageModel
 
 # ---------------------------------------------------------------------------
 # Config
@@ -415,9 +418,9 @@ def main():
         # max_prompt_length removed — BUG-FIX-E: not a valid param in this TRL version
 
         # Schedule
-        num_train_epochs=10,            # 100 total steps
+        num_train_epochs=25,            # 250 total steps
         logging_steps=1,
-        save_steps=50,
+        save_steps=125,
         output_dir="outputs",
     )
 
@@ -461,7 +464,7 @@ def main():
                 smoothed = np.convolve(reward_history, kernel, mode="valid")
                 plt.plot(range(4, len(reward_history)), smoothed,
                          color="#1565C0", linewidth=2, label="Smoothed")
-            plt.title("Auto-SRE GRPO Reward Curve (10 epochs)")
+            plt.title("Auto-SRE GRPO Reward Curve (25 epochs)")
             plt.xlabel("Training Step")
             plt.ylabel("Avg Reward")
             plt.ylim(0, 1)

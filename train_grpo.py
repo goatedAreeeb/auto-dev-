@@ -158,10 +158,18 @@ except ModuleNotFoundError:
     print("[SETUP] mergekit installed ✓")
 
 
-from datasets import Dataset
-from trl import GRPOConfig, GRPOTrainer
+import importlib.metadata
+_orig_version = importlib.metadata.version
+def _mock_version(name):
+    if name in ("vllm", "liger_kernel"): return "0.0.0"
+    return _orig_version(name)
+importlib.metadata.version = _mock_version
+
 from unsloth import FastLanguageModel, PatchFastRL
 PatchFastRL("GRPO", FastLanguageModel)
+
+from datasets import Dataset
+from trl import GRPOConfig, GRPOTrainer
 
 # ---------------------------------------------------------------------------
 # Config
@@ -416,7 +424,7 @@ def main():
         num_generations=8,
         max_prompt_length=512,
         max_completion_length=256,
-        num_train_epochs=3,
+        num_train_epochs=25,
         save_steps=100,
         max_grad_norm=0.1,
         output_dir="outputs",
