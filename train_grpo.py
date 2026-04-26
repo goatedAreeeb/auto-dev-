@@ -138,6 +138,7 @@ _dist_utils.StatelessProcessGroup  = _Dummy   # vllm_client.py line 35
 _pynccl.PyNcclCommunicator         = _Dummy   # vllm_client.py line 34
 _pyhccl.PyHcclCommunicator         = _Dummy   # vllm_client.py line 38 (Ascend NPU)
 _sampling.SamplingParams           = _Dummy
+_sampling.GuidedDecodingParams     = _Dummy
 _outputs.RequestOutput             = _Dummy
 _outputs.CompletionOutput          = _Dummy
 _lora_req.LoRARequest              = _Dummy
