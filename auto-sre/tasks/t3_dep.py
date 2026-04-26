@@ -7,8 +7,8 @@ from grader.health_check import DependencyGrader
 TASK_ID = "t3_dep"
 DESCRIPTION = (
     "The app fails to start because the 'dotenv' package is missing. "
-    "Run 'cd /home/user/app && npm install' to install dependencies, "
-    "then run 'node app.js' to start the app."
+    "Run 'cd /home/user/app', then 'npm install', "
+    "then 'systemctl start app'."
 )
 MAX_STEPS = 15
 

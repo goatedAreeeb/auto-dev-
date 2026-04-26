@@ -200,10 +200,21 @@ class DepChainGrader(BaseGrader):
             reward += 0.30
         if app_up:
             reward += 0.30
-        if db_up and cache_up and app_up and len(command_history) <= 8:
-            reward += 0.05
+        if db_up and cache_up and app_up:
+            db_idx, cache_idx, app_idx = -1, -1, -1
+            for i, cmd in enumerate(command_history):
+                if "start db" in cmd: db_idx = i
+                if "start cache" in cmd: cache_idx = i
+                if "start app" in cmd: app_idx = i
 
-        done = (db_up and cache_up and app_up)
+            if 0 <= db_idx < cache_idx < app_idx and len(command_history) <= 8:
+                reward += 0.05
+                done = True
+            else:
+                done = False
+        else:
+            done = False
+
         return _safe_score(reward), done, "State evaluated"
 
 

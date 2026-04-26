@@ -33,6 +33,8 @@ import sys
 import subprocess
 import requests
 import torch
+import random
+import json
 
 # ---------------------------------------------------------------------------
 # Dependency shims — must run BEFORE `from trl import ...`
@@ -172,6 +174,16 @@ TASK_MAX_STEPS: dict[str, int] = {
 reward_history:   list[float]        = []
 per_task_rewards: dict[str, list[float]] = {}
 
+episode_artifacts: list[dict] = []
+
+def get_task_pool(ep: int) -> list[str]:
+    if ep < 30:
+        return ["t5_disk_full"]
+    elif ep < 60:
+        return ["t5_disk_full", "t6_oom_killer", "t2_port"]
+    else:
+        return TASKS
+
 # BUG-16: episode counter — only incremented on successful episodes
 _episode: list[int] = [0]
 
@@ -202,8 +214,8 @@ TASK_DESCRIPTIONS: dict[str, str] = {
     ),
     "t3_dep": (
         "The app fails to start because the 'dotenv' package is missing. "
-        "Run 'cd /home/user/app && npm install' to install dependencies, "
-        "then run 'node app.js' to start the app."
+        "Run 'cd /home/user/app', then 'npm install', "
+        "then 'systemctl start app'."
     ),
     "t4_trap": (
         "A report says the system is down. "
@@ -251,7 +263,10 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
     """GRPO reward function — round-robin across all tasks."""
     rewards = []
     for completion in completions:
-        task_id = TASKS[_episode[0] % len(TASKS)]
+        task_pool = get_task_pool(_episode[0])
+        valid_pool = [t for t in task_pool if t in TASKS]
+        task_id = random.choice(valid_pool) if valid_pool else random.choice(TASKS)
+        
         success = False
         try:
             output = completion[0]["content"] if isinstance(completion, list) else completion
@@ -306,6 +321,15 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
         # BUG-16: only increment episode on success
         if success:
             _episode[0] += 1
+            
+        episode_artifacts.append({
+            "episode": _episode[0],
+            "task_id": task_id,
+            "commands": commands,
+            "reward": step_reward
+        })
+        with open("grpo_artifacts.json", "w") as f:
+            json.dump(episode_artifacts, f, indent=2)
 
     avg = sum(rewards) / max(len(rewards), 1)
     reward_history.append(avg)
@@ -345,8 +369,9 @@ def main():
     )
 
     system_prompt = (
-        "You are an expert SRE agent. Repair Linux infrastructure failures "
-        "by issuing CLI commands. Output one command per line. No explanations."
+        "You are an expert SRE agent. Repair Linux infrastructure failures.\n"
+        "Available commands include: df, du, rm, ps, kill, systemctl, mv, echo, cat, npm.\n"
+        "Output ONLY commands, one per line. No explanations or markdown formatting."
     )
 
     prompts = [
