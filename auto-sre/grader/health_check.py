@@ -29,6 +29,10 @@ class ConfigGrader(BaseGrader):
         app_running = state.get("services_running", {}).get("app", False)
 
         reward = 0.01
+        diagnosed = any("ls" in cmd or "cat" in cmd or "tail" in cmd or "grep" in cmd for cmd in command_history)
+        if diagnosed:
+            reward += 0.20
+
         if config_fixed:
             reward += 0.40
         if app_running:
@@ -50,6 +54,10 @@ class PortGrader(BaseGrader):
         rogue_killed = process_manager.is_port_free(target_port)
 
         reward = 0.01
+        diagnosed = any("netstat" in cmd or "ss" in cmd or "lsof" in cmd or "ps" in cmd for cmd in command_history)
+        if diagnosed:
+            reward += 0.20
+
         if rogue_killed:
             reward += 0.40
         if app_running:
@@ -129,6 +137,10 @@ class OOMGrader(BaseGrader):
         mem_freed = state.get("memory_usage", 100) < 80
 
         reward = 0.01
+        diagnosed = any("free" in cmd or "top" in cmd or "dmesg" in cmd or "cat" in cmd or "tail" in cmd for cmd in command_history)
+        if diagnosed:
+            reward += 0.20
+
         if rogue_dead:
             reward += 0.40
         if mem_freed:
