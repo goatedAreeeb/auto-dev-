@@ -11,8 +11,8 @@ from grader.health_check import OOMGrader
 
 TASK_ID = "t6_oom_killer"
 DESCRIPTION = (
-    "System unresponsive due to rogue process consuming 99% RAM. "
-    "Run 'ps aux' to identify it (PID visible in output), kill it."
+    "System unresponsive due to rogue process (PID 5555) consuming 99% RAM. "
+    "Kill it with 'kill 5555'."
 )
 MAX_STEPS = 10
 

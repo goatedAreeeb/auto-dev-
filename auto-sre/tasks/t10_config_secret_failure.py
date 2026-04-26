@@ -29,10 +29,10 @@ def build_initial_state() -> tuple:
     })
     fs.set_overlay({
         "/etc/app/secrets.conf": MockFile("/etc/app/secrets.conf",
-            "DB_PASSWORD=WRONG_SECRET_XYZ\nAPI_KEY=\n"),
+            "APP_SECRET=WRONG_SECRET_XYZ\nAPI_KEY=\n"),
         "/var/log/app.log": MockFile("/var/log/app.log",
             "[ERROR] app: database authentication failed\n"
-            "[ERROR] app: invalid DB_PASSWORD in /etc/app/secrets.conf\n"
+            "[ERROR] app: invalid APP_SECRET in /etc/app/secrets.conf\n"
             "[FATAL] app: unable to establish connection pool — exiting\n"),
         "/etc/app/app.conf": MockFile("/etc/app/app.conf",
             "port=8080\ndb_host=localhost\ndb_port=5432\n"),

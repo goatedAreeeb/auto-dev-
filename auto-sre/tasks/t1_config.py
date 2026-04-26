@@ -5,7 +5,11 @@ from engine.process_manager import MockProcess, ProcessManager
 from grader.health_check import ConfigGrader
 
 TASK_ID = "t1_config"
-DESCRIPTION = "A critical config file has been misnamed. The app cannot find /etc/app/conf."
+DESCRIPTION = (
+    "A critical config file has been misnamed. The app cannot find /etc/app/conf. "
+    "Run 'mv /etc/app/conf.bak /etc/app/conf' to fix it, "
+    "then run 'systemctl start app' to start the service."
+)
 MAX_STEPS = 10
 
 

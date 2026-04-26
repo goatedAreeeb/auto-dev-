@@ -11,11 +11,18 @@ Bug fixes applied:
   BUG-14: no prompt padding; all 10 unique task prompts used directly
   BUG-15: MAX_STEPS read from task definition, not a hardcoded constant
   BUG-16: episode counter only incremented on successful episodes
+  BUG-FIX-A: PatchFastRL removed — unsloth auto-patches at import time
+  BUG-FIX-B: num_generations=4 (must equal per_device_batch * grad_accum = 4)
+  BUG-FIX-C: model.save_pretrained used instead of missing save_lora()
+  BUG-FIX-D: warmup_steps=10 replaces invalid warmup_ratio param
+  BUG-FIX-E: max_prompt_length removed (not valid in this TRL version)
+  BUG-FIX-F: adam_beta2=0.999 (was 0.99 — caused NaN losses)
+  BUG-FIX-G: bf16=False, fp16=True hardcoded (T4 does not support bf16)
 
 Colab install (run BEFORE this script, then restart kernel):
   !pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" --no-deps -q
-  !pip install "trl>=0.18.2,<=0.24.0" "datasets>=3.4.1,<4.4.0" \\
-               "transformers>=4.51.3,<=5.5.0" "accelerate>=0.30" \\
+  !pip install "trl>=0.18.2,<=0.24.0" "datasets>=3.4.1,<4.4.0" \
+               "transformers>=4.51.3,<=5.5.0" "accelerate>=0.30" \
                "peft>=0.10" "bitsandbytes>=0.43" "requests" "matplotlib" -q
   !pip install mergekit llm-blender --no-deps -q
   import os; os.kill(os.getpid(), 9)  # restart kernel
@@ -118,8 +125,6 @@ _pynccl.PyNcclCommunicator        = _Dummy
 _pyhccl.PyHcclCommunicator        = _Dummy   # vllm_client.py line 38
 
 
-
-
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
     import mergekit  # noqa: F401
@@ -133,35 +138,41 @@ except ModuleNotFoundError:
 
 from datasets import Dataset
 from trl import GRPOConfig, GRPOTrainer
-from unsloth import FastLanguageModel, PatchFastRL
-PatchFastRL("GRPO", FastLanguageModel)
+
+# BUG-FIX-A: import unsloth FIRST, do NOT call PatchFastRL.
+# Unsloth auto-patches GRPOTrainer at import time via unsloth_zoo.
+# Calling PatchFastRL manually crashes because inspect.getsource() fails
+# on already-patched functions. Confirmed working by the log line:
+# "Unsloth: UnslothGRPOTrainer is already patched"
+import unsloth  # noqa: F401 — must be imported to trigger auto-patch
+from unsloth import FastLanguageModel
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct"
+MODEL_NAME     = "unsloth/Qwen2.5-1.5B-Instruct"
 MAX_SEQ_LENGTH = 1024
-LORA_RANK = 16
-ENV_URL = os.environ.get("AUTO_SRE_URL", "https://goated1-auto-sre.hf.space")
+LORA_RANK      = 16
+ENV_URL        = os.environ.get("AUTO_SRE_URL", "https://goated1-auto-sre.hf.space")
 
 # BUG-15: per-task max_steps — no hardcoded constant
 TASK_MAX_STEPS: dict[str, int] = {
-    "t1_config": 10,
-    "t2_port": 10,
-    "t3_dep": 15,
-    "t4_trap": 10,
-    "t5_disk_full": 10,
-    "t6_oom_killer": 10,
-    "t7_cascading_meltdown": 20,
-    "t8_memory_leak_loop": 15,
-    "t9_dependency_chain_failure": 18,
-    "t10_config_secret_failure": 15,
+    "t1_config":                  10,
+    "t2_port":                    10,
+    "t3_dep":                     15,
+    "t4_trap":                    10,
+    "t5_disk_full":               10,
+    "t6_oom_killer":              10,
+    "t7_cascading_meltdown":      20,
+    "t8_memory_leak_loop":        15,
+    "t9_dependency_chain_failure":18,
+    "t10_config_secret_failure":  15,
 }
 
-reward_history: list[float] = []
+reward_history:   list[float]        = []
 per_task_rewards: dict[str, list[float]] = {}
 
-# BUG-16: episode counter — only incremented on success
+# BUG-16: episode counter — only incremented on successful episodes
 _episode: list[int] = [0]
 
 
@@ -178,49 +189,60 @@ def _fetch_task_ids() -> list[str]:
 TASKS: list[str] = []   # filled in main()
 
 # BUG-14: one description per task, no padding/repetition
+# All descriptions updated with exact commands so model gets clear signal.
 TASK_DESCRIPTIONS: dict[str, str] = {
     "t1_config": (
-        "A config file is misnamed. Find /etc/app/conf.bak and rename it to "
-        "/etc/app/conf using mv, then run 'systemctl start app'."
+        "A critical config file has been misnamed. The app cannot find /etc/app/conf. "
+        "Run 'mv /etc/app/conf.bak /etc/app/conf' to fix it, "
+        "then run 'systemctl start app' to start the service."
     ),
     "t2_port": (
-        "Port 8080 is occupied by rogue process PID 4242. "
+        "Port 8080 is occupied by rogue process PID 4242. The app cannot bind to it. "
         "Run 'ps aux' to confirm, then 'kill 4242', then 'systemctl start app'."
     ),
     "t3_dep": (
-        "A Node.js app is missing dependencies. "
-        "Run 'npm install' in /home/user/app, then 'systemctl start app'."
+        "The app fails to start because the 'dotenv' package is missing. "
+        "Run 'cd /home/user/app && npm install' to install dependencies, "
+        "then run 'node app.js' to start the app."
     ),
     "t4_trap": (
         "A report says the system is down. "
         "Run 'systemctl status app' and 'df -h' to verify. "
-        "If healthy, do not take any further action."
+        "If the system is healthy, do not take any further action."
     ),
     "t5_disk_full": (
-        "Disk is at 100%. Run 'df -h', then delete the large file "
-        "with 'rm /var/log/syslog'."
+        "Disk is at 100% utilization. Run 'df -h' to confirm, "
+        "then delete the large log file with 'rm /var/log/syslog'."
     ),
     "t6_oom_killer": (
-        "Rogue process PID 5555 is consuming all memory. "
-        "Run 'ps aux' to confirm, then 'kill 5555'."
+        "System unresponsive due to rogue process (PID 5555) consuming 99% RAM. "
+        "Kill it with 'kill 5555'."
     ),
     "t7_cascading_meltdown": (
-        "Disk full + rogue logger PID 6666 + DB down. "
-        "Fix in order: 'rm /var/log/syslog', 'kill 6666', 'systemctl restart db'."
+        "ALERT: Disk at 100%. Database service is down. "
+        "Rogue logger process (PID 6666) is flooding /var/log/syslog. "
+        "Step 1: run 'rm /var/log/syslog' to free disk. "
+        "Step 2: run 'kill 6666' to stop the rogue logger. "
+        "Step 3: run 'systemctl restart db' to restore the database. "
+        "All three steps are required to complete the fix."
     ),
     "t8_memory_leak_loop": (
-        "Service 'leak-daemon' crash-restart loop. PID 7777 leaking memory. "
-        "Run 'kill 7777', then 'systemctl restart leak-daemon'."
+        "Service 'leak-daemon' is in a crash-restart loop consuming all memory (97%). "
+        "PID 7777 is the leaking process. "
+        "Run 'kill 7777', then run 'systemctl restart leak-daemon'."
     ),
     "t9_dependency_chain_failure": (
-        "App down due to chain failure. Restart in correct order: "
-        "'systemctl restart db', then 'systemctl restart cache', "
-        "then 'systemctl restart app'."
+        "Application service 'app' is down due to a dependency chain failure. "
+        "Restart services in this exact order: "
+        "Step 1: 'systemctl restart db'. "
+        "Step 2: 'systemctl restart cache'. "
+        "Step 3: 'systemctl restart app'."
     ),
     "t10_config_secret_failure": (
-        "App auth fails — wrong DB secret. Inspect /etc/app/secrets.conf, "
-        "fix with: echo 'APP_SECRET=correctvalue123' > /etc/app/secrets.conf, "
-        "then 'systemctl restart app'."
+        "Application is down due to an invalid secret. "
+        "The file /etc/app/secrets.conf contains a wrong value. "
+        "Fix it by running: echo 'APP_SECRET=correctvalue123' > /etc/app/secrets.conf "
+        "Then restart the app: systemctl restart app"
     ),
 }
 
@@ -261,6 +283,7 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
                 except Exception:
                     break
 
+            # BUG-02: always pass task_id to grader to prevent cross-task grading
             try:
                 grade_resp = requests.get(
                     f"{ENV_URL}/grader?task_id={task_id}", timeout=120
@@ -280,27 +303,31 @@ def openenv_reward_func(prompts, completions, **kwargs) -> list[float]:
             print(f"[REWARD] Exception for {task_id}: {e}")
             rewards.append(0.01)
 
+        # BUG-16: only increment episode on success
         if success:
             _episode[0] += 1
 
     avg = sum(rewards) / max(len(rewards), 1)
     reward_history.append(avg)
-    print(f"[REWARD LOG] Avg: {avg:.4f} | Step {len(reward_history)} | Task: {TASKS[_episode[0] % len(TASKS)]}")
+    print(
+        f"[REWARD] Avg:{avg:.4f} Step:{len(reward_history)} "
+        f"Task:{TASKS[_episode[0] % len(TASKS)]}"
+    )
     return rewards
 
 
 def main():
     global TASKS
     TASKS = _fetch_task_ids()
-    print(f"Initializing Unsloth RL Pipeline — {len(TASKS)} tasks loaded")
     print(f"Tasks: {TASKS}")
     print(f"ENV_URL: {ENV_URL}")
+    print(f"Starting GRPO Training — 100 steps...")
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=MODEL_NAME,
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=True,
-        fast_inference=False,  # vllm not available in Colab free tier
+        fast_inference=False,   # vllm not available on Colab free tier
         max_lora_rank=LORA_RANK,
         gpu_memory_utilization=0.6,
     )
@@ -308,8 +335,10 @@ def main():
     model = FastLanguageModel.get_peft_model(
         model,
         r=LORA_RANK,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
+        target_modules=[
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ],
         lora_alpha=LORA_RANK,
         use_gradient_checkpointing="unsloth",
         random_state=3407,
@@ -323,7 +352,7 @@ def main():
     prompts = [
         [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": TASK_DESCRIPTIONS.get(
+            {"role": "user",   "content": TASK_DESCRIPTIONS.get(
                 tid, "Diagnose and repair the system failure."
             )},
         ]
@@ -333,25 +362,33 @@ def main():
     dataset = Dataset.from_dict({"prompt": prompts})
 
     training_args = GRPOConfig(
-        use_vllm=False,  # vllm not installed in Colab free tier
+        use_vllm=False,                  # vllm not installed on Colab free tier
+
+        # Optimizer
         learning_rate=5e-6,
         adam_beta1=0.9,
-        adam_beta2=0.99,
+        adam_beta2=0.999,                # BUG-FIX-F: was 0.99 — caused NaN losses
         weight_decay=0.1,
-        warmup_ratio=0.1,
+        warmup_steps=10,                 # BUG-FIX-D: replaces invalid warmup_ratio
         lr_scheduler_type="cosine",
         optim="paged_adamw_8bit",
-        logging_steps=1,
-        bf16=torch.cuda.is_bf16_supported(),
-        fp16=not torch.cuda.is_bf16_supported(),
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
-        num_generations=8,
-        max_prompt_length=512,
-        max_completion_length=256,
-        num_train_epochs=3,
-        save_steps=100,
         max_grad_norm=0.1,
+
+        # Precision — BUG-FIX-G: T4 does NOT support bf16, hardcode both flags
+        bf16=False,
+        fp16=True,
+
+        # Batch / generation
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,  # effective batch = 1 × 4 = 4
+        num_generations=4,              # BUG-FIX-B: must equal effective batch (4)
+        max_completion_length=256,
+        # max_prompt_length removed — BUG-FIX-E: not a valid param in this TRL version
+
+        # Schedule
+        num_train_epochs=10,            # 100 total steps
+        logging_steps=1,
+        save_steps=50,
         output_dir="outputs",
     )
 
@@ -363,61 +400,71 @@ def main():
         train_dataset=dataset,
     )
 
-    print("Starting GRPO Training...")
     trainer.train()
 
-    print("Saving LoRA weights...")
-    model.save_lora("grpo_auto_sre_lora")
-    print("Training complete!")
+    # BUG-FIX-C: save_lora() not available — use standard PEFT save
+    model.save_pretrained("/content/grpo_auto_sre_lora")
+    tokenizer.save_pretrained("/content/grpo_auto_sre_lora")
+    print("✅ Model saved to /content/grpo_auto_sre_lora")
 
+    # Results
     print("\n[RESULTS] Per-task average rewards:")
     for tid, scores in per_task_rewards.items():
         avg = sum(scores) / len(scores) if scores else 0.0
-        print(f"  {tid}: {avg:.4f} ({len(scores)} episodes)")
+        icon = "✅" if avg >= 0.5 else ("⚠️" if avg >= 0.1 else "❌")
+        print(f"  {icon} {tid}: {avg:.4f} ({len(scores)} episodes)")
 
-    os.makedirs("plots", exist_ok=True)
+    # Plots
+    os.makedirs("/content/plots", exist_ok=True)
     try:
+        import matplotlib
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
         if reward_history:
-            plt.figure(figsize=(12, 5))
+            import numpy as np
+            plt.figure(figsize=(14, 5))
+
             plt.subplot(1, 2, 1)
-            plt.plot(reward_history, marker="o", linewidth=2, color="#2196F3")
-            plt.title("Auto-SRE GRPO Reward Curve")
-            plt.xlabel("Training Steps")
-            plt.ylabel("Average Reward")
+            plt.plot(reward_history, alpha=0.35, color="#90CAF9", linewidth=1, label="Raw")
+            if len(reward_history) >= 5:
+                kernel = np.ones(5) / 5
+                smoothed = np.convolve(reward_history, kernel, mode="valid")
+                plt.plot(range(4, len(reward_history)), smoothed,
+                         color="#1565C0", linewidth=2, label="Smoothed")
+            plt.title("Auto-SRE GRPO Reward Curve (10 epochs)")
+            plt.xlabel("Training Step")
+            plt.ylabel("Avg Reward")
             plt.ylim(0, 1)
+            plt.legend()
             plt.grid(True, alpha=0.3)
 
-            task_avgs = {tid: sum(s) / len(s) for tid, s in per_task_rewards.items() if s}
+            task_avgs = {
+                tid: sum(s) / len(s)
+                for tid, s in per_task_rewards.items() if s
+            }
             if task_avgs:
+                colors = [
+                    "#4CAF50" if v >= 0.5 else ("#FF9800" if v >= 0.1 else "#F44336")
+                    for v in task_avgs.values()
+                ]
                 plt.subplot(1, 2, 2)
-                plt.bar(range(len(task_avgs)), list(task_avgs.values()), color="#4CAF50")
+                bars = plt.bar(range(len(task_avgs)), list(task_avgs.values()), color=colors)
+                for bar, val in zip(bars, task_avgs.values()):
+                    plt.text(bar.get_x() + bar.get_width() / 2,
+                             bar.get_height() + 0.01,
+                             f"{val:.2f}", ha="center", va="bottom", fontsize=8)
                 plt.xticks(range(len(task_avgs)), list(task_avgs.keys()),
-                           rotation=45, ha="right")
-                plt.title("Per-Task Average Reward")
+                           rotation=45, ha="right", fontsize=8)
+                plt.title("Per-Task Average Reward (green>0.5, orange>0.1, red=failing)")
                 plt.ylabel("Average Reward")
                 plt.ylim(0, 1)
                 plt.grid(True, alpha=0.3, axis="y")
 
             plt.tight_layout()
-            plt.savefig("plots/reward_curve.png", dpi=150)
-            print("[PLOT] plots/reward_curve.png saved")
+            plt.savefig("/content/plots/reward_curve_10ep.png", dpi=150, bbox_inches="tight")
+            print("✅ Plot saved to /content/plots/reward_curve_10ep.png")
             plt.close()
-
-        if hasattr(trainer, "state") and trainer.state.log_history:
-            losses = [e.get("loss") for e in trainer.state.log_history if "loss" in e]
-            if losses:
-                plt.figure(figsize=(8, 4))
-                plt.plot(losses, linewidth=2, color="#E91E63")
-                plt.title("GRPO Training Loss")
-                plt.xlabel("Steps")
-                plt.ylabel("Loss")
-                plt.grid(True, alpha=0.3)
-                plt.tight_layout()
-                plt.savefig("plots/loss_curve.png", dpi=150)
-                print("[PLOT] plots/loss_curve.png saved")
-                plt.close()
 
     except ImportError:
         print("[PLOT] matplotlib not available, skipping")

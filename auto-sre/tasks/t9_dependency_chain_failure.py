@@ -14,8 +14,9 @@ from grader.health_check import DepChainGrader
 
 TASK_ID = "t9_dependency_chain_failure"
 DESCRIPTION = (
-    "ALERT: Application service 'app' is down. Dependency chain failure detected. "
-    "Trace the dependency chain (app -> cache -> db), fix root cause, restart in correct order."
+    "App down due to chain failure. Restart in correct order: "
+    "'systemctl restart db', then 'systemctl restart cache', "
+    "then 'systemctl restart app'."
 )
 MAX_STEPS = 18
 

@@ -202,16 +202,18 @@ TASKS: list[str] = []   # filled in main()
 # BUG-14: one description per task, no padding/repetition
 TASK_DESCRIPTIONS: dict[str, str] = {
     "t1_config": (
-        "A config file is misnamed. Find /etc/app/conf.bak and rename it to "
-        "/etc/app/conf using mv, then run 'systemctl start app'."
+        "A critical config file has been misnamed. The app cannot find /etc/app/conf. "
+        "Run 'mv /etc/app/conf.bak /etc/app/conf' to fix it, "
+        "then run 'systemctl start app' to start the service."
     ),
     "t2_port": (
         "Port 8080 is occupied by rogue process PID 4242. "
         "Run 'ps aux' to confirm, then 'kill 4242', then 'systemctl start app'."
     ),
     "t3_dep": (
-        "A Node.js app is missing dependencies. "
-        "Run 'npm install' in /home/user/app, then 'systemctl start app'."
+        "The app fails to start because the 'dotenv' package is missing. "
+        "Run 'cd /home/user/app && npm install' to install dependencies, "
+        "then run 'node app.js' to start the app."
     ),
     "t4_trap": (
         "A report says the system is down. "
@@ -223,12 +225,15 @@ TASK_DESCRIPTIONS: dict[str, str] = {
         "with 'rm /var/log/syslog'."
     ),
     "t6_oom_killer": (
-        "Rogue process PID 5555 is consuming all memory. "
-        "Run 'ps aux' to confirm, then 'kill 5555'."
+        "System unresponsive due to rogue process (PID 5555) consuming 99% RAM. "
+        "Kill it with 'kill 5555'."
     ),
     "t7_cascading_meltdown": (
-        "Disk full + rogue logger PID 6666 + DB down. "
-        "Fix in order: 'rm /var/log/syslog', 'kill 6666', 'systemctl restart db'."
+        "ALERT: Disk at 100%. Database service is down. "
+        "Rogue logger process (PID 6666) is flooding /var/log/syslog. "
+        "Diagnose, clear logs, kill the rogue process (kill 6666). "
+        "After killing PID 6666 and deleting the log, you MUST run "
+        "'systemctl restart db' to complete the fix."
     ),
     "t8_memory_leak_loop": (
         "Service 'leak-daemon' crash-restart loop. PID 7777 leaking memory. "

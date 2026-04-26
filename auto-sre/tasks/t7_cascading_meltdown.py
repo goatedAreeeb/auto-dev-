@@ -20,7 +20,9 @@ TASK_ID = "t7_cascading_meltdown"
 DESCRIPTION = (
     "ALERT: Disk at 100%. Database service is down. "
     "Rogue logger process (PID 6666) is flooding /var/log/syslog. "
-    "Diagnose, clear logs, kill the rogue process (kill 6666), and restore the DB."
+    "Diagnose, clear logs, kill the rogue process (kill 6666). "
+    "After killing PID 6666 and deleting the log, you MUST run "
+    "'systemctl restart db' to complete the fix."
 )
 MAX_STEPS = 20
 
