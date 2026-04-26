@@ -427,6 +427,7 @@ def main():
         num_train_epochs=25,
         save_steps=100,
         max_grad_norm=0.1,
+        report_to="wandb",
         output_dir="outputs",
     )
 

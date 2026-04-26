@@ -421,6 +421,7 @@ def main():
         num_train_epochs=25,            # 250 total steps
         logging_steps=1,
         save_steps=125,
+        report_to="wandb",
         output_dir="outputs",
     )
 
