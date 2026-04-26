@@ -439,6 +439,12 @@ def main():
         output_dir="outputs",
     )
 
+    # BUG-FIX: TRL GRPOTrainer.__init__ does model.warnings_issued["estimate_tokens"] = True
+    # but PEFT wraps the model and that attribute is absent on the underlying Qwen2 model.
+    # Inject an empty dict directly on the object so the attribute lookup succeeds.
+    if not hasattr(model, "warnings_issued"):
+        model.warnings_issued = {}
+
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
