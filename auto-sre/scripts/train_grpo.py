@@ -129,6 +129,7 @@ _pyhccl.PyHcclCommunicator        = _Dummy   # vllm_client.py line 38
 
 sys.modules["weave"].EvaluationLogger = _Dummy
 sys.modules["weave.trace.context"].weave_client_context = _Dummy
+sys.modules["liger_kernel"].__version__ = "0.0.0"
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
     import mergekit  # noqa: F401
