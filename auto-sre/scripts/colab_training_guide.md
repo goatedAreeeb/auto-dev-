@@ -1,9 +1,9 @@
 ### Cell 2 — Install dependencies
 
 ```python
-# Step 1: upgrade torch FIRST (Unsloth cpp extensions need >= 2.11)
-# Colab ships 2.10+cu128 by default — this upgrades in-place.
-!pip install "torch>=2.11.0" --index-url https://download.pytorch.org/whl/cu121 -q
+# Step 1: upgrade torch FIRST (Unsloth cpp extensions need >= 2.4.0)
+# Colab ships 2.5+cu121 by default — this ensures compatibility.
+!pip install "torch>=2.4.0" --index-url https://download.pytorch.org/whl/cu121 -q
 
 # Step 2: install Unsloth (latest, Colab-compatible)
 !pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" -q

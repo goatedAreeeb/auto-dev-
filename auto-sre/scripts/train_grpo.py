@@ -126,7 +126,7 @@ _dist_utils.StatelessProcessGroup = _Dummy
 _pynccl.PyNcclCommunicator        = _Dummy
 _pyhccl.PyHcclCommunicator        = _Dummy   # vllm_client.py line 38
 
-
+sys.modules["weave"].EvaluationLogger = _Dummy
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
     import mergekit  # noqa: F401

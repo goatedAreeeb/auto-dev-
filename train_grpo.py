@@ -141,7 +141,7 @@ _outputs.RequestOutput             = _Dummy
 _outputs.CompletionOutput          = _Dummy
 _lora_req.LoRARequest              = _Dummy
 
-
+sys.modules["weave"].EvaluationLogger = _Dummy
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
