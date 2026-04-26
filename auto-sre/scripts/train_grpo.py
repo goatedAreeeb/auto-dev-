@@ -113,6 +113,20 @@ _STUB_MODULES = [
     "vllm_ascend.distributed",
     "vllm_ascend.distributed.device_communicators",
     "vllm_ascend.distributed.device_communicators.pyhccl",
+    # immutables — required by mergekit.common, not installed in Colab free tier
+    "immutables",
+    # mergekit — imported by trl.mergekit_utils which is imported by callbacks.py
+    "mergekit",
+    "mergekit.config",
+    "mergekit.common",
+    "mergekit.merge",
+    "mergekit.plan",
+    "mergekit.io",
+    "mergekit.io.tasks",
+    "mergekit.architecture",
+    "mergekit.graph",
+    "mergekit.evo",
+    "mergekit.evo.config",
 ]
 for _m in _STUB_MODULES:
     sys.modules[_m] = _make_stub(_m)   # always overwrite stale/broken entries
@@ -131,15 +145,15 @@ sys.modules["weave"].EvaluationLogger = _Dummy
 sys.modules["weave.trace.context"].weave_client_context = _Dummy
 sys.modules["liger_kernel"].__version__ = "0.0.0"
 sys.modules["vllm.sampling_params"].GuidedDecodingParams = _Dummy()
-# mergekit: install without deps (its accelerate/safetensors pins break unsloth)
-try:
-    import mergekit  # noqa: F401
-except ModuleNotFoundError:
-    print("[SETUP] mergekit missing — installing (no-deps)...")
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "mergekit", "--no-deps", "-q"]
-    )
-    print("[SETUP] mergekit installed ✓")
+# mergekit / immutables — stubbed entirely; TRL imports mergekit at module level
+# via callbacks.py but we never call merge_models() at runtime.
+# Installing mergekit pulls immutables which is absent in Colab free tier,
+# so we inject stubs for every dotted path TRL touches.
+sys.modules["mergekit"].MergeConfiguration = _Dummy
+sys.modules["mergekit.config"].MergeConfiguration = _Dummy
+sys.modules["mergekit.common"].ModelReference = _Dummy
+sys.modules["mergekit.merge"].MergeContext = _Dummy
+sys.modules["mergekit.plan"].MergePlanner = _Dummy
 
 
 import importlib.metadata
