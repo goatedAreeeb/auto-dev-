@@ -84,10 +84,11 @@ _STUB_MODULES = [
     "llm_blender.blender.blender_utils",
     "llm_blender.pair_ranker",
     "llm_blender.pair_ranker.config",
-    # weave — TRL callbacks.py optional import
     "weave",
     "weave.flow",
     "weave.flow.calls_export",
+    "weave.trace",
+    "weave.trace.context",
     # liger_kernel — optional TRL/unsloth import
     "liger_kernel",
     "liger_kernel.transformers",
@@ -142,6 +143,7 @@ _outputs.CompletionOutput          = _Dummy
 _lora_req.LoRARequest              = _Dummy
 
 sys.modules["weave"].EvaluationLogger = _Dummy
+sys.modules["weave.trace.context"].weave_client_context = _Dummy
 
 # mergekit: install without deps (its accelerate/safetensors pins break unsloth)
 try:
